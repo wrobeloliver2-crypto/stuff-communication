@@ -1,22 +1,31 @@
-# Stuff Communication
+# 🏥 💚 🎀 STUFF Intranet
 
-PWA für zentrale Mitarbeiter-Kommunikation
-PhysioPro Lübeck + Pilates Company
+Central Employee Portal for PhysioPro Lübeck + Pilates Company
 
 ## Features
-- Admin-Dashboard (Kanban für Nachrichten)
-- Mitarbeiter-Dashboard (PIN-Login)
-- Lesestatus-Tracking
-- Audit-Log
-- WhatsApp-Integration (optional)
+
+### 👤 Employee Area
+- **PIN-Login** (single PIN for everything)
+- **Dashboard Widgets** (News + Postfach, drag-to-rearrange)
+- **News Feed** with categories (Ankündigungen | Events | Info | Schichten)
+- **Personal Mailbox** (individual + group messages)
+- **Mobile-first** with Bottom Navigation
+- **Read Status Tracking** (Admin only)
+
+### ⚙️ Admin Area
+- **Email + Password Login** (Oliver & Hanna)
+- **News Management** (create, categorize, delete, archive by month)
+- **Message Broadcasting** (to groups or individuals)
+- **Employee Management** (PIN reset, overview)
+- **Audit Log** (complete tracking)
 
 ## Tech Stack
-- React
-- Google Sheets API
-- Netlify Functions
-- localStorage für offline
+- React 18
+- Vite
+- localStorage (soon: Google Sheets)
+- Netlify
 
-## Deployment
-- GitHub: wrobeloliver2-crypto/stuff-communication
-- Netlify: stuff-communication.netlify.app
+## Repo & Live
+- **GitHub:** https://github.com/wrobeloliver2-crypto/stuff-communication
+- **Live:** https://stuff-communication.netlify.app
 
