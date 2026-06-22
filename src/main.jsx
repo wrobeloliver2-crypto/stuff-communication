@@ -50,16 +50,29 @@ const EMPLOYEES = [
 const load = (k, f) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : f; } catch { return f; } };
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 
+const DEFAULT_NEWS = [
+  {
+    id: 'n_anfragemgmt',
+    firm: 'physio',
+    category: 'Info',
+    title: 'PhysioPro Anfragemanagement — professionell aufgestellt für unser Wachstum',
+    text: 'PhysioPro Lübeck wächst. Wir werden mehr, wir kommen weiter — und genau deshalb stellen wir uns auch dort professionell auf, wo unsere Zukunft beginnt: bei der Gewinnung neuer Patientinnen und Patienten.\n\nMit unserem eigenen Anfragemanagement bündeln wir ab sofort jede eingehende Anfrage an einer zentralen Stelle und führen sie auf einem klaren Weg von „eingegangen" bis „erledigt". Jede Anfrage bekommt ihren festen Platz, eine eindeutige Zuständigkeit und einen nachvollziehbaren Verlauf. Nichts geht verloren, niemand wird vergessen, und jede Anfrage wird so schnell und verbindlich beantwortet, wie es Menschen erwarten dürfen, die sich uns anvertrauen.\n\nDas ist mehr als ein Werkzeug — es ist ein Bekenntnis dazu, wie wir arbeiten wollen: aufmerksam, verlässlich und auf der Höhe der Zeit. Jeder erste Kontakt ist die Chance, einen Menschen langfristig für PhysioPro zu gewinnen. Diese Chance wollen wir nicht dem Zufall überlassen.\n\nSo gestalten wir die Zukunft von PhysioPro Lübeck — Schritt für Schritt, mit einem Team, das wächst, und mit Strukturen, die mit uns mitwachsen.\n\n(Das Anfragemanagement ist ein internes Verwaltungswerkzeug von PhysioPro. Der Zugang liegt bei der Verwaltung und dem Rezeptionsteam.)',
+    photos: [], link: null, linkLabel: null, eventDate: null, attachment: null,
+    created: '22.06.2026, 09:00',
+  },
+];
+
 const DEFAULT_TOOLS = [
-  { id: 't1', abbr: 'ZE', title: 'Zeiterfassung', desc: 'Arbeitszeiten erfassen und einsehen', link: 'https://physiozeiterfassung.netlify.app', firm: 'beide' },
-  { id: 't2', abbr: 'FB', title: 'Fahrtenbuch', desc: 'Dienstfahrten dokumentieren', link: 'https://physiofahrtenbuch.netlify.app', firm: 'physio' },
+  { id: 't1', abbr: 'ZE', title: 'Zeiterfassung', desc: 'Arbeitszeiten erfassen und einsehen', link: 'https://physiozeiterfassung.netlify.app', firm: 'physio' },
+  { id: 't2', abbr: 'TA', title: 'Trainer App', desc: 'Kurse und Teilnehmer verwalten', link: '', firm: 'pilates' },
+  { id: 't3', abbr: 'FB', title: 'Fahrtenbuch', desc: 'Dienstfahrten dokumentieren', link: 'https://physiofahrtenbuch.netlify.app', firm: 'physio' },
 ];
 
 const App = () => {
   const [page, setPage] = useState('login');
   const [user, setUser] = useState(null);
   const [employees, setEmployees] = useState(() => load('si_employees', EMPLOYEES));
-  const [news, setNews] = useState(() => load('si_news', []));
+  const [news, setNews] = useState(() => load('si_news', DEFAULT_NEWS));
   const [tools, setTools] = useState(() => load('si_tools', DEFAULT_TOOLS));
   const [messages, setMessages] = useState(() => load('si_messages', []));
   const [audit, setAudit] = useState(() => load('si_audit', []));
