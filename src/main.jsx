@@ -13,8 +13,16 @@ const ADMIN_CREDENTIALS = [
   { email: 'oliver.wrobel@pilatescompany.de', password: 'admin123', name: 'Oliver Wrobel' },
   { email: 'hanna.wrobel@pilatescompany.de', password: 'admin123', name: 'Hanna Wrobel' },
 ];
-const CATEGORIES = ['Ankündigungen', 'Events', 'Info', 'Schichten'];
+const CATEGORIES = ['Ankündigungen', 'Events', 'Info'];
 const GROUPS = ['PhysioPro Staff', 'Pilates Trainer', 'Verwaltung'];
+
+// Firmen-Zuordnung
+const FIRMS = {
+  beide:   { label: 'Beide', short: 'PHYSIOPRO & PILATES', dot: 'split' },
+  physio:  { label: 'PhysioPro', short: 'PHYSIOPRO', dot: T.green },
+  pilates: { label: 'Pilates Company', short: 'PILATES CO.', dot: T.mauve },
+};
+
 const EMPLOYEES = [
   { id: 'oliver', name: 'Oliver Wrobel', role: 'Verwaltung', company: 'Beide', pin: null, pinSet: false },
   { id: 'hanna', name: 'Hanna Wrobel', role: 'Verwaltung', company: 'Beide', pin: null, pinSet: false },
@@ -55,7 +63,7 @@ const App = () => {
   const adminLogin = (email, pw) => { const a = ADMIN_CREDENTIALS.find(x => x.email === email && x.password === pw); if (a) { setUser({ ...a, isAdmin: true }); setPage('admin'); logA('Login', a.name, 'Admin'); } else alert('E-Mail oder Passwort falsch'); };
   const logout = () => { setUser(null); setPage('login'); };
 
-  const addNews = n => { setNews(x => [{ ...n, id: Date.now(), created: new Date().toLocaleString('de-DE') }, ...x]); logA('News erstellt', user.name, n.title); };
+  const addNews = n => { setNews(x => [{ ...n, id: Date.now(), created: new Date().toLocaleString('de-DE') }, ...x]); logA('News erstellt', user.name, n.title + ' (' + FIRMS[n.firm].label + ')'); };
   const delNews = id => { setNews(x => x.filter(n => n.id !== id)); logA('News gelöscht', user.name, '#' + id); };
   const sendMessage = m => { setMessages(x => [{ ...m, id: Date.now(), created: new Date().toLocaleString('de-DE'), sender: user.name, readBy: [], replies: [] }, ...x]); logA('Nachricht gesendet', user.name, '"' + m.title + '" → ' + [...m.toGroups, ...m.toIndividuals].join(', ')); };
   const markRead = id => setMessages(x => x.map(m => m.id === id && !m.readBy.some(r => r.id === user.id) ? { ...m, readBy: [...m.readBy, { id: user.id, name: user.name, ts: new Date().toLocaleString('de-DE') }] } : m));
@@ -69,13 +77,25 @@ const App = () => {
 };
 const forMe = (m, u) => m.toIndividuals.includes(u.id) || m.toGroups.includes(u.role);
 
+const FirmDot = ({ firm }) => {
+  const f = FIRMS[firm] || FIRMS.beide;
+  if (f.dot === 'split') {
+    return <span style={{ width: 9, height: 9, borderRadius: '50%', display: 'inline-block', background: 'linear-gradient(90deg,' + T.green + ' 0 50%,' + T.mauveSoft + ' 50% 100%)' }} />;
+  }
+  return <span style={{ width: 9, height: 9, borderRadius: '50%', display: 'inline-block', background: f.dot }} />;
+};
+const FirmTag = ({ firm }) => {
+  const f = FIRMS[firm] || FIRMS.beide;
+  return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 10, letterSpacing: '0.08em', color: T.faint, textTransform: 'uppercase' }}><FirmDot firm={firm} />{f.short}</span>;
+};
+
 const BrandHeader = ({ right }) => (
   <div style={{ background: T.surface, borderBottom: '1px solid ' + T.lineSoft }}>
-    <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0.9rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-        <img src={logoPhysio} alt="PhysioPro Lübeck" style={{ height: 38 }} />
-        <div style={{ width: 1, height: 30, background: T.line }} />
-        <img src={logoPilates} alt="Pilates Company Lübeck" style={{ height: 26 }} />
+    <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0.7rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+        <img src={logoPhysio} alt="PhysioPro Lübeck" style={{ height: 46 }} />
+        <div style={{ width: 1, height: 34, background: T.line }} />
+        <img src={logoPilates} alt="Pilates Company Lübeck" style={{ height: 30 }} />
       </div>
       {right}
     </div>
@@ -88,9 +108,9 @@ const Marker = ({ letter, tone }) => {
   const solid = tone === 'solid';
   return <div style={{ width: 30, height: 30, borderRadius: '50%', border: solid ? 'none' : '1.5px solid ' + color, background: solid ? T.mauveSoft : 'transparent', color: solid ? '#fff' : color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 500, flexShrink: 0 }}>{letter}</div>;
 };
-const catTone = c => ({ 'Ankündigungen': 'mauve', 'Events': 'green', 'Info': 'green', 'Schichten': 'mauve' }[c] || 'green');
-const catLetter = c => ({ 'Ankündigungen': 'A', 'Events': 'E', 'Info': 'I', 'Schichten': 'S' }[c] || '•');
-const FileChip = ({ name }) => <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 8, padding: '6px 11px', background: T.chip, borderRadius: 6, fontSize: 12, color: T.muted }}><span>↓</span> {name}</span>;
+const catLetter = c => ({ 'Ankündigungen': 'A', 'Events': 'E', 'Info': 'I' }[c] || '•');
+const catTone = c => ({ 'Ankündigungen': 'mauve', 'Events': 'green', 'Info': 'green' }[c] || 'green');
+const FileChip = ({ name }) => <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 8, marginRight: 8, padding: '6px 11px', background: T.chip, borderRadius: 6, fontSize: 12, color: T.muted }}><span>↓</span> {name}</span>;
 const Empty = ({ text }) => <div style={{ textAlign: 'center', padding: '3rem 1rem', color: T.faint, fontSize: 13 }}>{text}</div>;
 
 const Login = ({ employees, onPinSetup, onEmployeeLogin, onAdminLogin }) => {
@@ -149,23 +169,6 @@ const Login = ({ employees, onPinSetup, onEmployeeLogin, onAdminLogin }) => {
   );
 };
 
-const Collapsible = ({ marker, title, sub, children, onOpen }) => {
-  const [open, setOpen] = useState(false);
-  return (
-    <div style={{ background: T.surface, border: '0.5px solid ' + T.line, borderRadius: 10, overflow: 'hidden', marginBottom: 9 }}>
-      <div onClick={() => setOpen(o => { if (!o && onOpen) onOpen(); return !o; })} style={{ padding: '13px 15px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 13 }}>
-        {marker}
-        <div style={{ flex: 1 }}>
-          <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: T.ink }}>{title}</p>
-          {sub && <p style={{ margin: '2px 0 0', fontSize: 11, color: T.faint, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{sub}</p>}
-        </div>
-        <span style={{ color: '#c4bfb2', fontSize: 12 }}>{open ? '▴' : '▾'}</span>
-      </div>
-      {open && <div style={{ padding: '0 15px 15px 58px', fontSize: 13, lineHeight: 1.65, color: T.muted }}>{children}</div>}
-    </div>
-  );
-};
-
 const Employee = ({ user, news, messages, onMarkRead, onReply, onLogout }) => {
   const [tab, setTab] = useState('news');
   const initials = user.name.split(' ').map(w => w[0]).join('').slice(0, 2);
@@ -190,7 +193,7 @@ const Employee = ({ user, news, messages, onMarkRead, onReply, onLogout }) => {
         </div>
       </div>
       <div style={{ flex: 1, maxWidth: 1100, margin: '0 auto', width: '100%', padding: '1.75rem 1.5rem', boxSizing: 'border-box' }}>
-        {tab === 'news' && <div><Label>Firmen-News</Label>{news.length === 0 && <Empty text="Noch keine News veröffentlicht." />}{news.map(n => <Collapsible key={n.id} marker={<Marker letter={catLetter(n.category)} tone={catTone(n.category)} />} title={n.title} sub={n.category + ' · ' + n.created}><p style={{ margin: '0 0 8px' }}>{n.text}</p>{n.attachment && <FileChip name={n.attachment} />}</Collapsible>)}</div>}
+        {tab === 'news' && <NewsFeed news={news} />}
         {tab === 'info' && <InfoList />}
         {tab === 'postfach' && <Postfach user={user} messages={messages} onMarkRead={onMarkRead} onReply={onReply} />}
       </div>
@@ -198,13 +201,84 @@ const Employee = ({ user, news, messages, onMarkRead, onReply, onLogout }) => {
   );
 };
 
+const NewsFeed = ({ news }) => (
+  <div>
+    <Label>Firmen-News</Label>
+    {news.length === 0 && <Empty text="Noch keine News veröffentlicht." />}
+    {news.map(n => <NewsCard key={n.id} n={n} />)}
+  </div>
+);
+
+const NewsCard = ({ n }) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ background: T.surface, border: '0.5px solid ' + T.line, borderRadius: 10, overflow: 'hidden', marginBottom: 9 }}>
+      <div onClick={() => setOpen(o => !o)} style={{ padding: '13px 15px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 13 }}>
+        <Marker letter={catLetter(n.category)} tone={catTone(n.category)} />
+        <div style={{ flex: 1 }}>
+          <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: T.ink }}>{n.title}</p>
+          <div style={{ margin: '3px 0 0', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <FirmTag firm={n.firm} />
+            <span style={{ fontSize: 11, color: T.faint, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{n.category} · {n.created}</span>
+          </div>
+        </div>
+        {n.photos && n.photos.length > 0 && <span style={{ fontSize: 11, color: T.faint }}>{n.photos.length} ▦</span>}
+        <span style={{ color: '#c4bfb2', fontSize: 12 }}>{open ? '▴' : '▾'}</span>
+      </div>
+      {open && (
+        <div style={{ padding: '0 15px 16px 58px', fontSize: 13, lineHeight: 1.65, color: T.muted }}>
+          <p style={{ margin: '0 0 10px', whiteSpace: 'pre-wrap' }}>{n.text}</p>
+          {n.photos && n.photos.length > 0 && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(120px,1fr))', gap: 8, margin: '0 0 10px' }}>
+              {n.photos.map((p, i) => (
+                <div key={i} style={{ aspectRatio: '4/3', background: T.chip, borderRadius: 8, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: T.faint }}>
+                  {p.url ? <img src={p.url} alt={p.name || ''} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : '▦ ' + (p.name || 'Foto')}
+                </div>
+              ))}
+            </div>
+          )}
+          {n.eventDate && <p style={{ margin: '0 0 6px', color: T.green }}>📅 {n.eventDate}</p>}
+          {n.link && <p style={{ margin: '0 0 6px' }}><a href={n.link} target="_blank" rel="noopener noreferrer" style={{ color: T.mauve }}>→ {n.linkLabel || n.link}</a></p>}
+          {n.attachment && <FileChip name={n.attachment} />}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const INFO_CARDS = [
-  { letter: 'P', tone: 'green', title: 'PhysioCoaching', sub: '1:1 am Reformer · 89 € · 60 Min', body: '1:1-Training am Reformer mit hochqualifizierten Physiotherapeuten. Ablauf: physiotherapeutisches Check-in, Aufwärmen, individuelles Krafttraining, Ausklang. Coaches: Hanna & Nico.' },
-  { letter: 'R', tone: 'mauve', title: 'Reformer-Pilates', sub: 'Pilates Company · alle Level', body: 'Gezieltes Ganzkörpertraining am Reformer – effektiv, gelenkschonend, für alle Level. Kleine Gruppen (max. 1:5–1:8).' },
-  { letter: 'T', tone: 'green', title: 'Physiotherapie', sub: 'KG · Manuelle Therapie · Lymphdrainage', body: 'Klassische Physiotherapie: Krankengymnastik, Manuelle Therapie, Lymphdrainage, Massage, Prävention. Auch ohne Verordnung möglich.' },
-  { letter: 'Y', tone: 'mauve', title: 'Yoga & Aerial', sub: 'Pilates Company · kleine Gruppen', body: 'Klassisches Yoga sowie Aerial Yoga in der Hängematte – Kraft, Balance und Beweglichkeit.' },
+  { letter: 'P', tone: 'green', firm: 'beide', title: 'PhysioCoaching', sub: '1:1 am Reformer · 89 € · 60 Min', body: '1:1-Training am Reformer mit hochqualifizierten Physiotherapeuten. Ablauf: physiotherapeutisches Check-in, Aufwärmen, individuelles Krafttraining, Ausklang. Coaches: Hanna & Nico.' },
+  { letter: 'R', tone: 'mauve', firm: 'pilates', title: 'Reformer-Pilates', sub: 'alle Level', body: 'Gezieltes Ganzkörpertraining am Reformer – effektiv, gelenkschonend, für alle Level. Kleine Gruppen (max. 1:5–1:8).' },
+  { letter: 'T', tone: 'green', firm: 'physio', title: 'Physiotherapie', sub: 'KG · Manuelle Therapie · Lymphdrainage', body: 'Klassische Physiotherapie: Krankengymnastik, Manuelle Therapie, Lymphdrainage, Massage, Prävention. Auch ohne Verordnung möglich.' },
+  { letter: 'Y', tone: 'mauve', firm: 'pilates', title: 'Yoga & Aerial', sub: 'kleine Gruppen', body: 'Klassisches Yoga sowie Aerial Yoga in der Hängematte – Kraft, Balance und Beweglichkeit.' },
 ];
-const InfoList = () => <div><Label>Informationen & Angebote</Label>{INFO_CARDS.map((c, i) => <Collapsible key={i} marker={<Marker letter={c.letter} tone={c.tone} />} title={c.title} sub={c.sub}>{c.body}</Collapsible>)}</div>;
+const InfoList = () => {
+  return (
+    <div>
+      <Label>Informationen & Angebote</Label>
+      {INFO_CARDS.map((c, i) => <InfoCard key={i} c={c} />)}
+    </div>
+  );
+};
+const InfoCard = ({ c }) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ background: T.surface, border: '0.5px solid ' + T.line, borderRadius: 10, overflow: 'hidden', marginBottom: 9 }}>
+      <div onClick={() => setOpen(o => !o)} style={{ padding: '13px 15px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 13 }}>
+        <Marker letter={c.letter} tone={c.tone} />
+        <div style={{ flex: 1 }}>
+          <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: T.ink }}>{c.title}</p>
+          <div style={{ margin: '3px 0 0', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <FirmTag firm={c.firm} />
+            <span style={{ fontSize: 11, color: T.faint, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{c.sub}</span>
+          </div>
+        </div>
+        <span style={{ color: '#c4bfb2', fontSize: 12 }}>{open ? '▴' : '▾'}</span>
+      </div>
+      {open && <div style={{ padding: '0 15px 15px 58px', fontSize: 13, lineHeight: 1.65, color: T.muted }}>{c.body}</div>}
+    </div>
+  );
+};
 
 const Postfach = ({ user, messages, onMarkRead, onReply }) => (
   <div>
@@ -287,23 +361,66 @@ const Admin = ({ user, news, messages, employees, audit, onAddNews, onDelNews, o
 const cardS = { background: T.surface, border: '0.5px solid ' + T.line, borderRadius: 12, padding: '1.5rem', marginBottom: '1.5rem' };
 const fieldS = { width: '100%', padding: '11px 12px', marginBottom: 12, border: '1px solid ' + T.line, borderRadius: 8, fontSize: 14, boxSizing: 'border-box', fontFamily: 'inherit', color: T.ink, background: T.bg };
 const primaryBtn = { padding: '10px 20px', border: 'none', borderRadius: 8, background: T.mauve, color: '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer' };
+const subLabel = { fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: T.faint, margin: '0.5rem 0 0.6rem' };
 
 const AdminNews = ({ news, onAdd, onDel }) => {
+  const [firm, setFirm] = useState('beide');
   const [title, setTitle] = useState(''); const [text, setText] = useState('');
-  const [cat, setCat] = useState(CATEGORIES[0]); const [file, setFile] = useState('');
+  const [cat, setCat] = useState(CATEGORIES[0]);
+  const [link, setLink] = useState(''); const [linkLabel, setLinkLabel] = useState('');
+  const [eventDate, setEventDate] = useState('');
+  const [photos, setPhotos] = useState([]);
+  const [file, setFile] = useState('');
+
+  const addPhotoByName = () => {
+    const name = prompt('Foto-Name oder Bild-URL (echter Upload folgt mit Google-Anbindung):');
+    if (name) setPhotos(p => [...p, name.startsWith('http') ? { url: name, name } : { name }]);
+  };
+
+  const reset = () => { setFirm('beide'); setTitle(''); setText(''); setCat(CATEGORIES[0]); setLink(''); setLinkLabel(''); setEventDate(''); setPhotos([]); setFile(''); };
+
   return (
     <div>
       <div style={cardS}>
         <Label>News erstellen</Label>
-        <p style={{ fontSize: 12, color: T.muted, margin: '-0.4rem 0 1rem' }}>Inhalt im Claude-Chat formulieren und hier einfügen.</p>
+        <p style={{ fontSize: 12, color: T.muted, margin: '-0.4rem 0 1.2rem' }}>Inhalt im Claude-Chat formulieren und hier einfügen.</p>
+
+        <p style={subLabel}>Für welche Firma? *</p>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+          {Object.entries(FIRMS).map(([k, f]) => (
+            <button key={k} onClick={() => setFirm(k)} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 14px', borderRadius: 8, fontSize: 13, cursor: 'pointer', border: '1px solid ' + (firm === k ? T.ink : T.line), background: firm === k ? T.chip : T.surface, color: firm === k ? T.ink : T.muted }}>
+              <FirmDot firm={k} />{f.label}
+            </button>
+          ))}
+        </div>
+
         <input style={fieldS} placeholder="Titel" value={title} onChange={e => setTitle(e.target.value)} />
         <textarea style={{ ...fieldS, minHeight: 110 }} placeholder="Text" value={text} onChange={e => setText(e.target.value)} />
+
         <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
           <select style={{ ...fieldS, marginBottom: 0 }} value={cat} onChange={e => setCat(e.target.value)}>{CATEGORIES.map(c => <option key={c}>{c}</option>)}</select>
-          <input style={{ ...fieldS, marginBottom: 0 }} placeholder="Dateiname (optional)" value={file} onChange={e => setFile(e.target.value)} />
+          <input style={{ ...fieldS, marginBottom: 0 }} placeholder="Termin / Datum (optional)" value={eventDate} onChange={e => setEventDate(e.target.value)} />
         </div>
-        <button style={primaryBtn} onClick={() => { if (!title || !text) return alert('Titel und Text nötig'); onAdd({ title, text, category: cat, attachment: file || null }); setTitle(''); setText(''); setFile(''); }}>Veröffentlichen</button>
+
+        <p style={subLabel}>Fotos (Galerie)</p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+          {photos.map((p, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: T.chip, borderRadius: 8, fontSize: 12, color: T.muted }}>
+              ▦ {p.name || 'Foto'} <span onClick={() => setPhotos(ps => ps.filter((_, j) => j !== i))} style={{ cursor: 'pointer', color: T.mauve, fontWeight: 600 }}>×</span>
+            </div>
+          ))}
+          <button onClick={addPhotoByName} style={{ padding: '6px 12px', border: '1px dashed ' + T.line, borderRadius: 8, background: T.surface, color: T.muted, fontSize: 12, cursor: 'pointer' }}>+ Foto</button>
+        </div>
+
+        <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
+          <input style={{ ...fieldS, marginBottom: 0 }} placeholder="Web-Link (https://…)" value={link} onChange={e => setLink(e.target.value)} />
+          <input style={{ ...fieldS, marginBottom: 0 }} placeholder="Link-Text (optional)" value={linkLabel} onChange={e => setLinkLabel(e.target.value)} />
+        </div>
+        <input style={fieldS} placeholder="Dateiname (optional)" value={file} onChange={e => setFile(e.target.value)} />
+
+        <button style={primaryBtn} onClick={() => { if (!title || !text) return alert('Titel und Text nötig'); onAdd({ firm, title, text, category: cat, link: link || null, linkLabel: linkLabel || null, eventDate: eventDate || null, photos, attachment: file || null }); reset(); }}>Veröffentlichen</button>
       </div>
+
       <div style={cardS}>
         <Label>Veröffentlicht ({news.length})</Label>
         {news.length === 0 && <Empty text="Noch nichts veröffentlicht." />}
@@ -311,7 +428,13 @@ const AdminNews = ({ news, onAdd, onDel }) => {
           <div key={n.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 0', borderBottom: '1px solid ' + T.lineSoft }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <Marker letter={catLetter(n.category)} tone={catTone(n.category)} />
-              <div><p style={{ margin: 0, fontSize: 14, color: T.ink }}>{n.title}</p><p style={{ margin: '2px 0 0', fontSize: 11, color: T.faint, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{n.category} · {n.created}</p></div>
+              <div>
+                <p style={{ margin: 0, fontSize: 14, color: T.ink }}>{n.title}</p>
+                <div style={{ margin: '3px 0 0', display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <FirmTag firm={n.firm} />
+                  <span style={{ fontSize: 11, color: T.faint, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{n.category} · {n.created}</span>
+                </div>
+              </div>
             </div>
             <button onClick={() => onDel(n.id)} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '6px 10px', fontSize: 12, color: T.muted, cursor: 'pointer' }}>Löschen</button>
           </div>
@@ -333,11 +456,11 @@ const AdminPost = ({ employees, messages, onSend }) => {
         <input style={fieldS} placeholder="Betreff" value={title} onChange={e => setTitle(e.target.value)} />
         <textarea style={{ ...fieldS, minHeight: 100 }} placeholder="Text" value={text} onChange={e => setText(e.target.value)} />
         <input style={fieldS} placeholder="Dateiname (optional, z. B. schichtplan_juli.xlsx)" value={file} onChange={e => setFile(e.target.value)} />
-        <p style={{ fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: T.faint, margin: '0.5rem 0 0.6rem' }}>An Gruppen</p>
+        <p style={subLabel}>An Gruppen</p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
           {GROUPS.map(g => <button key={g} onClick={() => toggle(groups, setGroups, g)} style={{ padding: '7px 13px', borderRadius: 20, fontSize: 12, cursor: 'pointer', border: '1px solid ' + (groups.includes(g) ? T.mauve : T.line), background: groups.includes(g) ? T.mauve : T.surface, color: groups.includes(g) ? '#fff' : T.muted }}>{g}</button>)}
         </div>
-        <p style={{ fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: T.faint, margin: '0 0 0.6rem' }}>An einzelne Personen</p>
+        <p style={subLabel}>An einzelne Personen</p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
           {employees.map(e => <button key={e.id} onClick={() => toggle(inds, setInds, e.id)} style={{ padding: '7px 13px', borderRadius: 20, fontSize: 12, cursor: 'pointer', border: '1px solid ' + (inds.includes(e.id) ? T.green : T.line), background: inds.includes(e.id) ? T.green : T.surface, color: inds.includes(e.id) ? '#fff' : T.muted }}>{e.name}</button>)}
         </div>
