@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
 import logoPhysio from '/logo-physio.svg';
 import logoPilates from '/logo-pilates.svg';
@@ -16,7 +16,6 @@ const ADMIN_CREDENTIALS = [
 const CATEGORIES = ['Ankündigungen', 'Events', 'Info'];
 const GROUPS = ['PhysioPro Staff', 'Pilates Trainer', 'Verwaltung'];
 
-// Firmen-Zuordnung
 const FIRMS = {
   beide:   { label: 'Beide', short: 'PHYSIOPRO & PILATES', dot: 'split' },
   physio:  { label: 'PhysioPro', short: 'PHYSIOPRO', dot: T.green },
@@ -50,15 +49,24 @@ const EMPLOYEES = [
 const load = (k, f) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : f; } catch { return f; } };
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 
+// --- Upload Helper ---
+const UPLOAD_URL = '/.netlify/functions/upload';
+const uploadFile = async (file, folder = 'uploads') => {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('folder', folder);
+  const res = await fetch(UPLOAD_URL, { method: 'POST', body: form });
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.error || 'Upload fehlgeschlagen');
+  return data;
+};
+
 const DEFAULT_NEWS = [
   {
-    id: 'n_anfragemgmt',
-    firm: 'physio',
-    category: 'Info',
+    id: 'n_anfragemgmt', firm: 'physio', category: 'Info',
     title: 'PhysioPro Anfragemanagement — professionell aufgestellt für unser Wachstum',
     text: 'PhysioPro Lübeck wächst. Wir werden mehr, wir kommen weiter — und genau deshalb stellen wir uns auch dort professionell auf, wo unsere Zukunft beginnt: bei der Gewinnung neuer Patientinnen und Patienten.\n\nMit unserem eigenen Anfragemanagement bündeln wir ab sofort jede eingehende Anfrage an einer zentralen Stelle und führen sie auf einem klaren Weg von „eingegangen" bis „erledigt". Jede Anfrage bekommt ihren festen Platz, eine eindeutige Zuständigkeit und einen nachvollziehbaren Verlauf. Nichts geht verloren, niemand wird vergessen, und jede Anfrage wird so schnell und verbindlich beantwortet, wie es Menschen erwarten dürfen, die sich uns anvertrauen.\n\nDas ist mehr als ein Werkzeug — es ist ein Bekenntnis dazu, wie wir arbeiten wollen: aufmerksam, verlässlich und auf der Höhe der Zeit. Jeder erste Kontakt ist die Chance, einen Menschen langfristig für PhysioPro zu gewinnen. Diese Chance wollen wir nicht dem Zufall überlassen.\n\nSo gestalten wir die Zukunft von PhysioPro Lübeck — Schritt für Schritt, mit einem Team, das wächst, und mit Strukturen, die mit uns mitwachsen.\n\n(Das Anfragemanagement ist ein internes Verwaltungswerkzeug von PhysioPro. Der Zugang liegt bei der Verwaltung und dem Rezeptionsteam.)',
-    photos: [], link: null, linkLabel: null, eventDate: null, attachment: null,
-    created: '22.06.2026, 09:00',
+    photos: [], link: null, linkLabel: null, eventDate: null, attachment: null, created: '22.06.2026, 09:00',
   },
 ];
 
@@ -107,16 +115,13 @@ const forMe = (m, u) => m.toIndividuals.includes(u.id) || m.toGroups.includes(u.
 
 const FirmDot = ({ firm }) => {
   const f = FIRMS[firm] || FIRMS.beide;
-  if (f.dot === 'split') {
-    return <span style={{ width: 9, height: 9, borderRadius: '50%', display: 'inline-block', background: 'linear-gradient(90deg,' + T.green + ' 0 50%,' + T.mauveSoft + ' 50% 100%)' }} />;
-  }
+  if (f.dot === 'split') return <span style={{ width: 9, height: 9, borderRadius: '50%', display: 'inline-block', background: 'linear-gradient(90deg,' + T.green + ' 0 50%,' + T.mauveSoft + ' 50% 100%)' }} />;
   return <span style={{ width: 9, height: 9, borderRadius: '50%', display: 'inline-block', background: f.dot }} />;
 };
 const FirmTag = ({ firm }) => {
   const f = FIRMS[firm] || FIRMS.beide;
   return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 10, letterSpacing: '0.08em', color: T.faint, textTransform: 'uppercase' }}><FirmDot firm={firm} />{f.short}</span>;
 };
-
 const BrandHeader = ({ right }) => (
   <div style={{ background: T.surface, borderBottom: '1px solid ' + T.lineSoft }}>
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0.7rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -138,7 +143,47 @@ const Marker = ({ letter, tone }) => {
 };
 const catLetter = c => ({ 'Ankündigungen': 'A', 'Events': 'E', 'Info': 'I' }[c] || '•');
 const catTone = c => ({ 'Ankündigungen': 'mauve', 'Events': 'green', 'Info': 'green' }[c] || 'green');
-const FileChip = ({ name }) => <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 8, marginRight: 8, padding: '6px 11px', background: T.chip, borderRadius: 6, fontSize: 12, color: T.muted }}><span>↓</span> {name}</span>;
+
+const isImage = mime => mime && mime.startsWith('image/');
+
+const FileChip = ({ name, url }) => (
+  url
+    ? <a href={url} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 8, marginRight: 8, padding: '6px 11px', background: T.chip, borderRadius: 6, fontSize: 12, color: T.muted, textDecoration: 'none' }}>↓ {name}</a>
+    : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 8, marginRight: 8, padding: '6px 11px', background: T.chip, borderRadius: 6, fontSize: 12, color: T.muted }}>↓ {name}</span>
+);
+
+const UploadButton = ({ onUploaded, folder = 'uploads', accept = 'image/*,.pdf,.docx,.xlsx,.doc,.xls', label = '+ Datei anhängen' }) => {
+  const ref = useRef();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const handle = async e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setLoading(true); setError('');
+    try {
+      const result = await uploadFile(file, folder);
+      onUploaded(result);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+      ref.current.value = '';
+    }
+  };
+  return (
+    <div style={{ display: 'inline-flex', flexDirection: 'column', gap: 4 }}>
+      <input ref={ref} type="file" accept={accept} style={{ display: 'none' }} onChange={handle} />
+      <button
+        type="button"
+        onClick={() => ref.current.click()}
+        disabled={loading}
+        style={{ padding: '6px 12px', border: '1px dashed ' + T.line, borderRadius: 8, background: T.surface, color: loading ? T.faint : T.muted, fontSize: 12, cursor: loading ? 'default' : 'pointer' }}
+      >{loading ? 'Wird hochgeladen …' : label}</button>
+      {error && <span style={{ fontSize: 11, color: '#c0392b' }}>{error}</span>}
+    </div>
+  );
+};
+
 const Empty = ({ text }) => <div style={{ textAlign: 'center', padding: '3rem 1rem', color: T.faint, fontSize: 13 }}>{text}</div>;
 
 const Login = ({ employees, onPinSetup, onEmployeeLogin, onAdminLogin }) => {
@@ -245,7 +290,7 @@ const PhotoPlaceholder = ({ firm, abbr }) => {
     ? 'linear-gradient(135deg,' + T.green + ' 0%,' + T.green + ' 50%,' + T.mauveSoft + ' 50%,' + T.mauveSoft + ' 100%)'
     : (firm === 'pilates' ? T.mauveSoft : T.green);
   return (
-    <div style={{ aspectRatio: '16/9', background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+    <div style={{ aspectRatio: '16/9', background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <span style={{ fontSize: 30, fontWeight: 500, color: 'rgba(255,255,255,0.85)', letterSpacing: '0.1em' }}>{abbr}</span>
     </div>
   );
@@ -255,12 +300,12 @@ const NewsCard = ({ n }) => {
   const [expanded, setExpanded] = useState(false);
   const long = n.text.length > 220;
   const preview = long && !expanded ? n.text.slice(0, 220).trimEnd() + '…' : n.text;
-  const hasPhoto = n.photos && n.photos.length > 0 && n.photos[0].url;
+  const photo = n.photos && n.photos.length > 0 ? n.photos[0] : null;
   const abbr = (FIRMS[n.firm] || FIRMS.beide).label === 'Pilates Company' ? 'PC' : n.firm === 'physio' ? 'PP' : 'PP·PC';
   return (
     <div style={{ background: T.surface, border: '0.5px solid ' + T.line, borderRadius: 12, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-      {hasPhoto
-        ? <div style={{ aspectRatio: '16/9', overflow: 'hidden' }}><img src={n.photos[0].url} alt={n.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /></div>
+      {photo?.url
+        ? <div style={{ aspectRatio: '16/9', overflow: 'hidden' }}><img src={photo.url} alt={n.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /></div>
         : <PhotoPlaceholder firm={n.firm} abbr={abbr} />}
       <div style={{ padding: '1.1rem 1.2rem 1.3rem', display: 'flex', flexDirection: 'column', flex: 1 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 9, flexWrap: 'wrap' }}>
@@ -272,7 +317,7 @@ const NewsCard = ({ n }) => {
         {long && <button onClick={() => setExpanded(e => !e)} style={{ alignSelf: 'flex-start', background: 'none', border: 'none', padding: 0, color: T.mauve, fontSize: 13, cursor: 'pointer', fontWeight: 500 }}>{expanded ? 'weniger anzeigen' : 'mehr lesen'}</button>}
         {n.eventDate && <p style={{ margin: '10px 0 0', fontSize: 13, color: T.green }}>📅 {n.eventDate}</p>}
         {n.link && <p style={{ margin: '8px 0 0' }}><a href={n.link} target="_blank" rel="noopener noreferrer" style={{ color: T.mauve, fontSize: 13 }}>→ {n.linkLabel || n.link}</a></p>}
-        {n.attachment && <div><FileChip name={n.attachment} /></div>}
+        {n.attachment && <FileChip name={n.attachment.name || n.attachment} url={n.attachment.url || null} />}
         <p style={{ margin: '12px 0 0', fontSize: 11, color: T.faint, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{n.created}</p>
       </div>
     </div>
@@ -321,7 +366,8 @@ const Postfach = ({ user, messages, onMarkRead, onReply }) => (
 
 const MessageThread = ({ m, user, unread, onOpen, onReply }) => {
   const [open, setOpen] = useState(false);
-  const [reply, setReply] = useState(''); const [file, setFile] = useState('');
+  const [reply, setReply] = useState('');
+  const [pendingFile, setPendingFile] = useState(null);
   return (
     <div style={{ background: T.surface, border: '0.5px solid ' + (unread ? T.mauveSoft : T.line), borderRadius: 10, overflow: 'hidden', marginBottom: 9 }}>
       <div onClick={() => setOpen(o => { if (!o) onOpen(); return !o; })} style={{ padding: '13px 15px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 13 }}>
@@ -335,23 +381,24 @@ const MessageThread = ({ m, user, unread, onOpen, onReply }) => {
       {open && (
         <div style={{ padding: '0 15px 15px 58px', fontSize: 13, lineHeight: 1.65, color: T.muted }}>
           <p style={{ margin: '0 0 8px' }}>{m.text}</p>
-          {m.attachment && <FileChip name={m.attachment} />}
+          {m.attachment && <FileChip name={m.attachment.name || m.attachment} url={m.attachment.url || null} />}
           {m.replies && m.replies.length > 0 && (
             <div style={{ marginTop: 14, borderTop: '1px solid ' + T.lineSoft, paddingTop: 12 }}>
               {m.replies.map((r, i) => (
                 <div key={i} style={{ marginBottom: 10 }}>
                   <p style={{ margin: 0, fontSize: 11, color: T.faint, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{r.from} · {r.ts}</p>
                   <p style={{ margin: '3px 0 0' }}>{r.text}</p>
-                  {r.attachment && <FileChip name={r.attachment} />}
+                  {r.attachment && <FileChip name={r.attachment.name || r.attachment} url={r.attachment.url || null} />}
                 </div>
               ))}
             </div>
           )}
           <div style={{ marginTop: 14, borderTop: '1px solid ' + T.lineSoft, paddingTop: 12 }}>
             <textarea value={reply} onChange={e => setReply(e.target.value)} placeholder="Antwort schreiben …" style={{ width: '100%', minHeight: 60, padding: 10, border: '1px solid ' + T.line, borderRadius: 8, fontSize: 13, boxSizing: 'border-box', fontFamily: 'inherit', color: T.ink, background: T.bg }} />
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
-              <input value={file} onChange={e => setFile(e.target.value)} placeholder="Dateiname (optional)" style={{ flex: 1, padding: '8px 10px', border: '1px solid ' + T.line, borderRadius: 8, fontSize: 12, boxSizing: 'border-box', color: T.ink, background: T.bg }} />
-              <button onClick={() => { if (!reply.trim()) return; onReply(m.id, reply, file || null); setReply(''); setFile(''); }} style={{ padding: '8px 16px', border: 'none', borderRadius: 8, background: T.mauve, color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Senden</button>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
+              <UploadButton folder="antworten" label="+ Datei anhängen" onUploaded={f => setPendingFile(f)} />
+              {pendingFile && <FileChip name={pendingFile.name} url={pendingFile.url} />}
+              <button onClick={() => { if (!reply.trim()) return; onReply(m.id, reply, pendingFile || null); setReply(''); setPendingFile(null); }} style={{ padding: '8px 16px', border: 'none', borderRadius: 8, background: T.mauve, color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Senden</button>
             </div>
           </div>
         </div>
@@ -401,21 +448,13 @@ const AdminNews = ({ news, onAdd, onDel }) => {
   const [link, setLink] = useState(''); const [linkLabel, setLinkLabel] = useState('');
   const [eventDate, setEventDate] = useState('');
   const [photos, setPhotos] = useState([]);
-  const [file, setFile] = useState('');
-
-  const addPhotoByName = () => {
-    const name = prompt('Foto-Name oder Bild-URL (echter Upload folgt mit Google-Anbindung):');
-    if (name) setPhotos(p => [...p, name.startsWith('http') ? { url: name, name } : { name }]);
-  };
-
-  const reset = () => { setFirm('beide'); setTitle(''); setText(''); setCat(CATEGORIES[0]); setLink(''); setLinkLabel(''); setEventDate(''); setPhotos([]); setFile(''); };
-
+  const [pendingAttachment, setPendingAttachment] = useState(null);
+  const reset = () => { setFirm('beide'); setTitle(''); setText(''); setCat(CATEGORIES[0]); setLink(''); setLinkLabel(''); setEventDate(''); setPhotos([]); setPendingAttachment(null); };
   return (
     <div>
       <div style={cardS}>
         <Label>News erstellen</Label>
         <p style={{ fontSize: 12, color: T.muted, margin: '-0.4rem 0 1.2rem' }}>Inhalt im Claude-Chat formulieren und hier einfügen.</p>
-
         <p style={subLabel}>Für welche Firma? *</p>
         <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
           {Object.entries(FIRMS).map(([k, f]) => (
@@ -424,34 +463,35 @@ const AdminNews = ({ news, onAdd, onDel }) => {
             </button>
           ))}
         </div>
-
         <input style={fieldS} placeholder="Titel" value={title} onChange={e => setTitle(e.target.value)} />
         <textarea style={{ ...fieldS, minHeight: 110 }} placeholder="Text" value={text} onChange={e => setText(e.target.value)} />
-
         <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
           <select style={{ ...fieldS, marginBottom: 0 }} value={cat} onChange={e => setCat(e.target.value)}>{CATEGORIES.map(c => <option key={c}>{c}</option>)}</select>
           <input style={{ ...fieldS, marginBottom: 0 }} placeholder="Termin / Datum (optional)" value={eventDate} onChange={e => setEventDate(e.target.value)} />
         </div>
-
-        <p style={subLabel}>Fotos (Galerie)</p>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+        <p style={subLabel}>Titelbild</p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12, alignItems: 'center' }}>
           {photos.map((p, i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: T.chip, borderRadius: 8, fontSize: 12, color: T.muted }}>
-              ▦ {p.name || 'Foto'} <span onClick={() => setPhotos(ps => ps.filter((_, j) => j !== i))} style={{ cursor: 'pointer', color: T.mauve, fontWeight: 600 }}>×</span>
+              {p.url ? <img src={p.url} alt="" style={{ width: 32, height: 22, objectFit: 'cover', borderRadius: 4 }} /> : '▦'} {p.name}
+              <span onClick={() => setPhotos(ps => ps.filter((_, j) => j !== i))} style={{ cursor: 'pointer', color: T.mauve, fontWeight: 600 }}>×</span>
             </div>
           ))}
-          <button onClick={addPhotoByName} style={{ padding: '6px 12px', border: '1px dashed ' + T.line, borderRadius: 8, background: T.surface, color: T.muted, fontSize: 12, cursor: 'pointer' }}>+ Foto</button>
+          {photos.length === 0 && (
+            <UploadButton folder="news-fotos" accept="image/*" label="+ Foto hochladen" onUploaded={f => setPhotos([{ url: f.url, name: f.name, path: f.path }])} />
+          )}
         </div>
-
         <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
           <input style={{ ...fieldS, marginBottom: 0 }} placeholder="Web-Link (https://…)" value={link} onChange={e => setLink(e.target.value)} />
           <input style={{ ...fieldS, marginBottom: 0 }} placeholder="Link-Text (optional)" value={linkLabel} onChange={e => setLinkLabel(e.target.value)} />
         </div>
-        <input style={fieldS} placeholder="Dateiname (optional)" value={file} onChange={e => setFile(e.target.value)} />
-
-        <button style={primaryBtn} onClick={() => { if (!title || !text) return alert('Titel und Text nötig'); onAdd({ firm, title, text, category: cat, link: link || null, linkLabel: linkLabel || null, eventDate: eventDate || null, photos, attachment: file || null }); reset(); }}>Veröffentlichen</button>
+        <p style={subLabel}>Anhang (PDF, Word, Excel)</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          <UploadButton folder="news-anhaenge" accept=".pdf,.docx,.xlsx,.doc,.xls" label="+ Anhang hochladen" onUploaded={f => setPendingAttachment(f)} />
+          {pendingAttachment && <FileChip name={pendingAttachment.name} url={pendingAttachment.url} />}
+        </div>
+        <button style={primaryBtn} onClick={() => { if (!title || !text) return alert('Titel und Text nötig'); onAdd({ firm, title, text, category: cat, link: link || null, linkLabel: linkLabel || null, eventDate: eventDate || null, photos, attachment: pendingAttachment || null }); reset(); }}>Veröffentlichen</button>
       </div>
-
       <div style={cardS}>
         <Label>Veröffentlicht ({news.length})</Label>
         {news.length === 0 && <Empty text="Noch nichts veröffentlicht." />}
@@ -525,7 +565,8 @@ const AdminTools = ({ tools, onAdd, onDel }) => {
 
 const AdminPost = ({ employees, messages, onSend }) => {
   const [title, setTitle] = useState(''); const [text, setText] = useState('');
-  const [groups, setGroups] = useState([]); const [inds, setInds] = useState([]); const [file, setFile] = useState('');
+  const [groups, setGroups] = useState([]); const [inds, setInds] = useState([]);
+  const [pendingAttachment, setPendingAttachment] = useState(null);
   const toggle = (arr, set, v) => set(arr.includes(v) ? arr.filter(x => x !== v) : [...arr, v]);
   return (
     <div>
@@ -534,7 +575,10 @@ const AdminPost = ({ employees, messages, onSend }) => {
         <p style={{ fontSize: 12, color: T.muted, margin: '-0.4rem 0 1rem', lineHeight: 1.6 }}>Geht in den persönlichen Bereich der Empfänger. Empfänger können antworten und Dateien zurücksenden. Alles wird protokolliert.</p>
         <input style={fieldS} placeholder="Betreff" value={title} onChange={e => setTitle(e.target.value)} />
         <textarea style={{ ...fieldS, minHeight: 100 }} placeholder="Text" value={text} onChange={e => setText(e.target.value)} />
-        <input style={fieldS} placeholder="Dateiname (optional, z. B. schichtplan_juli.xlsx)" value={file} onChange={e => setFile(e.target.value)} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+          <UploadButton folder="nachrichten" accept=".pdf,.docx,.xlsx,.doc,.xls,image/*" label="+ Anhang hochladen" onUploaded={f => setPendingAttachment(f)} />
+          {pendingAttachment && <FileChip name={pendingAttachment.name} url={pendingAttachment.url} />}
+        </div>
         <p style={subLabel}>An Gruppen</p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
           {GROUPS.map(g => <button key={g} onClick={() => toggle(groups, setGroups, g)} style={{ padding: '7px 13px', borderRadius: 20, fontSize: 12, cursor: 'pointer', border: '1px solid ' + (groups.includes(g) ? T.mauve : T.line), background: groups.includes(g) ? T.mauve : T.surface, color: groups.includes(g) ? '#fff' : T.muted }}>{g}</button>)}
@@ -543,7 +587,7 @@ const AdminPost = ({ employees, messages, onSend }) => {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
           {employees.map(e => <button key={e.id} onClick={() => toggle(inds, setInds, e.id)} style={{ padding: '7px 13px', borderRadius: 20, fontSize: 12, cursor: 'pointer', border: '1px solid ' + (inds.includes(e.id) ? T.green : T.line), background: inds.includes(e.id) ? T.green : T.surface, color: inds.includes(e.id) ? '#fff' : T.muted }}>{e.name}</button>)}
         </div>
-        <button style={primaryBtn} onClick={() => { if (!title || !text) return alert('Betreff und Text nötig'); if (groups.length === 0 && inds.length === 0) return alert('Mindestens einen Empfänger wählen'); onSend({ title, text, attachment: file || null, toGroups: groups, toIndividuals: inds }); setTitle(''); setText(''); setFile(''); setGroups([]); setInds([]); }}>Senden</button>
+        <button style={primaryBtn} onClick={() => { if (!title || !text) return alert('Betreff und Text nötig'); if (groups.length === 0 && inds.length === 0) return alert('Mindestens einen Empfänger wählen'); onSend({ title, text, attachment: pendingAttachment || null, toGroups: groups, toIndividuals: inds }); setTitle(''); setText(''); setPendingAttachment(null); setGroups([]); setInds([]); }}>Senden</button>
       </div>
       <div style={cardS}>
         <Label>Gesendet ({messages.length})</Label>
