@@ -19,19 +19,39 @@ exports.handler = async (event, context) => {
       return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'JSON-Key ungültig: ' + e.message }) };
     }
 
-    const storage = new Storage({ credentials });
-    const bucketName = process.env.GCS_BUCKET || 'stuff-intranet-files';
-    const [exists] = await storage.bucket(bucketName).exists();
+    const storage = new Storage({ credentials, projectId: credentials.project_id });
+    const bucketName = 'stuff-intranet-files';
+
+    // Erst alle Buckets im Projekt listen
+    let allBuckets = [];
+    try {
+      const [buckets] = await storage.getBuckets();
+      allBuckets = buckets.map(b => b.name);
+    } catch(e) {
+      allBuckets = ['Fehler beim Listen: ' + e.message];
+    }
+
+    // Dann spezifischen Bucket prüfen
+    let bucketExists = false;
+    let bucketError = null;
+    try {
+      const [exists] = await storage.bucket(bucketName).exists();
+      bucketExists = exists;
+    } catch(e) {
+      bucketError = e.message;
+    }
 
     return {
       statusCode: 200,
       headers,
       body: JSON.stringify({
-        ok: true,
-        project: credentials.project_id,
+        ok: bucketExists,
+        project_id: credentials.project_id,
         client_email: credentials.client_email,
-        bucket: bucketName,
-        bucket_exists: exists,
+        target_bucket: bucketName,
+        bucket_found: bucketExists,
+        bucket_error: bucketError,
+        all_buckets_visible: allBuckets,
       }),
     };
   } catch (err) {
