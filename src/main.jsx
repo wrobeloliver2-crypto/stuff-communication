@@ -101,6 +101,7 @@ const App = () => {
   const updateNews = (id, n) => { setNews(x => x.map(e => e.id === id ? { ...e, ...n, id, updated: new Date().toLocaleString('de-DE') } : e)); logA('News bearbeitet', user.name, n.title); };
   const delNews = id => { setNews(x => x.filter(n => n.id !== id)); logA('News gelöscht', user.name, '#' + id); };
   const addTool = t => { setTools(x => [...x, { ...t, id: 'tool' + Date.now() }]); logA('Tool/Link erstellt', user.name, t.title); };
+  const updateTool = (id, t) => { setTools(x => x.map(e => e.id === id ? { ...e, ...t, id } : e)); logA('Tool/Link bearbeitet', user.name, t.title); };
   const delTool = id => { setTools(x => x.filter(t => t.id !== id)); logA('Tool/Link gelöscht', user.name, '#' + id); };
   const sendMessage = m => { setMessages(x => [{ ...m, id: Date.now(), created: new Date().toLocaleString('de-DE'), sender: user.name, readBy: [], replies: [] }, ...x]); logA('Nachricht gesendet', user.name, '"' + m.title + '" → ' + [...m.toGroups, ...m.toIndividuals].join(', ')); };
   const markRead = id => setMessages(x => x.map(m => m.id === id && !m.readBy.some(r => r.id === user.id) ? { ...m, readBy: [...m.readBy, { id: user.id, name: user.name, ts: new Date().toLocaleString('de-DE') }] } : m));
@@ -109,7 +110,7 @@ const App = () => {
 
   if (page === 'login') return <Login employees={employees} onPinSetup={pinSetup} onEmployeeLogin={employeeLogin} onAdminLogin={adminLogin} />;
   if (page === 'employee' && user) return <Employee user={user} news={news} tools={tools} messages={messages.filter(m => forMe(m, user))} onMarkRead={markRead} onReply={addReply} onLogout={logout} />;
-  if (page === 'admin' && user?.isAdmin) return <Admin user={user} news={news} tools={tools} messages={messages} employees={employees} audit={audit} onAddNews={addNews} onUpdateNews={updateNews} onDelNews={delNews} onAddTool={addTool} onDelTool={delTool} onSend={sendMessage} onResetPin={resetPin} onLogout={logout} />;
+  if (page === 'admin' && user?.isAdmin) return <Admin user={user} news={news} tools={tools} messages={messages} employees={employees} audit={audit} onAddNews={addNews} onUpdateNews={updateNews} onDelNews={delNews} onAddTool={addTool} onUpdateTool={updateTool} onDelTool={delTool} onSend={sendMessage} onResetPin={resetPin} onLogout={logout} />;
   return null;
 };
 const forMe = (m, u) => m.toIndividuals.includes(u.id) || m.toGroups.includes(u.role);
@@ -408,7 +409,7 @@ const MessageThread = ({ m, user, unread, onOpen, onReply }) => {
   );
 };
 
-const Admin = ({ user, news, tools, messages, employees, audit, onAddNews, onUpdateNews, onDelNews, onAddTool, onDelTool, onSend, onResetPin, onLogout }) => {
+const Admin = ({ user, news, tools, messages, employees, audit, onAddNews, onUpdateNews, onDelNews, onAddTool, onUpdateTool, onDelTool, onSend, onResetPin, onLogout }) => {
   const [tab, setTab] = useState('news');
   return (
     <div style={{ minHeight: '100vh', background: T.bg, fontFamily: 'system-ui,-apple-system,sans-serif', display: 'flex', flexDirection: 'column' }}>
@@ -428,7 +429,7 @@ const Admin = ({ user, news, tools, messages, employees, audit, onAddNews, onUpd
       </div>
       <div style={{ flex: 1, maxWidth: 1100, margin: '0 auto', width: '100%', padding: '1.75rem 1.5rem', boxSizing: 'border-box' }}>
         {tab === 'news' && <AdminNews news={news} onAdd={onAddNews} onUpdate={onUpdateNews} onDel={onDelNews} />}
-        {tab === 'tools' && <AdminTools tools={tools} onAdd={onAddTool} onDel={onDelTool} />}
+        {tab === 'tools' && <AdminTools tools={tools} onAdd={onAddTool} onUpdate={onUpdateTool} onDel={onDelTool} />}
         {tab === 'post' && <AdminPost employees={employees} messages={messages} onSend={onSend} />}
         {tab === 'team' && <AdminTeam employees={employees} onResetPin={onResetPin} />}
         {tab === 'audit' && <AdminAudit audit={audit} />}
@@ -549,15 +550,44 @@ const AdminNews = ({ news, onAdd, onUpdate, onDel }) => {
   );
 };
 
-const AdminTools = ({ tools, onAdd, onDel }) => {
+const AdminTools = ({ tools, onAdd, onUpdate, onDel }) => {
+  const [editId, setEditId] = useState(null);
   const [abbr, setAbbr] = useState(''); const [title, setTitle] = useState('');
   const [desc, setDesc] = useState(''); const [link, setLink] = useState(''); const [firm, setFirm] = useState('beide');
-  const reset = () => { setAbbr(''); setTitle(''); setDesc(''); setLink(''); setFirm('beide'); };
+  const [soon, setSoon] = useState(false);
+
+  const reset = () => { setEditId(null); setAbbr(''); setTitle(''); setDesc(''); setLink(''); setFirm('beide'); setSoon(false); };
+
+  const startEdit = t => {
+    setEditId(t.id);
+    setAbbr(t.abbr || '');
+    setTitle(t.title || '');
+    setDesc(t.desc || '');
+    setLink(t.link || '');
+    setFirm(t.firm || 'beide');
+    setSoon(t.soon || false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleSubmit = () => {
+    if (!title) return alert('Titel nötig');
+    if (!soon && !link) return alert('Link nötig (oder „in Arbeit" aktivieren)');
+    const payload = { abbr: abbr || title.slice(0, 2).toUpperCase(), title, desc, link, firm, soon };
+    if (editId) { onUpdate(editId, payload); } else { onAdd(payload); }
+    reset();
+  };
+
   return (
     <div>
       <div style={cardS}>
-        <Label>Tool / Link hinzufügen</Label>
-        <p style={{ fontSize: 12, color: T.muted, margin: '-0.4rem 0 1.2rem' }}>Dauerhafte Werkzeuge und Verweise für alle Mitarbeiter.</p>
+        <Label>{editId ? 'Tool / Link bearbeiten' : 'Tool / Link hinzufügen'}</Label>
+        {editId && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: '1rem', padding: '8px 12px', background: '#fdf6ec', border: '1px solid #f0d9b0', borderRadius: 8 }}>
+            <span style={{ fontSize: 13, color: '#7a5c2e' }}>Du bearbeitest einen bestehenden Eintrag.</span>
+            <button onClick={reset} style={{ marginLeft: 'auto', background: 'none', border: '1px solid #d4b483', borderRadius: 6, padding: '4px 10px', fontSize: 12, color: '#7a5c2e', cursor: 'pointer' }}>Abbrechen</button>
+          </div>
+        )}
+        {!editId && <p style={{ fontSize: 12, color: T.muted, margin: '-0.4rem 0 1.2rem' }}>Dauerhafte Werkzeuge und Verweise für alle Mitarbeiter.</p>}
         <p style={subLabel}>Für welche Firma? *</p>
         <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
           {Object.entries(FIRMS).map(([k, f]) => (
@@ -571,8 +601,12 @@ const AdminTools = ({ tools, onAdd, onDel }) => {
           <input style={{ ...fieldS, marginBottom: 0 }} placeholder="Titel (z. B. Zeiterfassung)" value={title} onChange={e => setTitle(e.target.value)} />
         </div>
         <input style={fieldS} placeholder="Kurze Beschreibung" value={desc} onChange={e => setDesc(e.target.value)} />
-        <input style={fieldS} placeholder="Link (https://…)" value={link} onChange={e => setLink(e.target.value)} />
-        <button style={primaryBtn} onClick={() => { if (!title || !link) return alert('Titel und Link nötig'); onAdd({ abbr: abbr || title.slice(0, 2).toUpperCase(), title, desc, link, firm }); reset(); }}>Hinzufügen</button>
+        <input style={{ ...fieldS, opacity: soon ? 0.45 : 1 }} placeholder="Link (https://…)" value={link} onChange={e => setLink(e.target.value)} disabled={soon} />
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: T.muted, marginBottom: 16, cursor: 'pointer' }}>
+          <input type="checkbox" checked={soon} onChange={e => setSoon(e.target.checked)} style={{ accentColor: T.mauve }} />
+          Als „in Arbeit" markieren (kein Link nötig)
+        </label>
+        <button style={primaryBtn} onClick={handleSubmit}>{editId ? 'Änderungen speichern' : 'Hinzufügen'}</button>
       </div>
       <div style={cardS}>
         <Label>Vorhanden ({tools.length})</Label>
@@ -582,14 +616,17 @@ const AdminTools = ({ tools, onAdd, onDel }) => {
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <div style={{ width: 34, height: 34, borderRadius: 8, background: T.chip, color: T.green, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 500 }}>{t.abbr}</div>
               <div>
-                <p style={{ margin: 0, fontSize: 14, color: T.ink }}>{t.title}</p>
+                <p style={{ margin: 0, fontSize: 14, color: T.ink }}>{t.title}{t.soon && <span style={{ marginLeft: 8, fontSize: 10, color: T.mauve, border: '1px solid ' + T.mauveSoft, borderRadius: 20, padding: '2px 7px' }}>in Arbeit</span>}</p>
                 <div style={{ margin: '3px 0 0', display: 'flex', alignItems: 'center', gap: 10 }}>
                   <FirmTag firm={t.firm} />
-                  <span style={{ fontSize: 11, color: T.faint }}>{t.link}</span>
+                  {t.link && <span style={{ fontSize: 11, color: T.faint }}>{t.link}</span>}
                 </div>
               </div>
             </div>
-            <button onClick={() => onDel(t.id)} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '6px 10px', fontSize: 12, color: T.muted, cursor: 'pointer' }}>Löschen</button>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button onClick={() => startEdit(t)} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '6px 10px', fontSize: 12, color: T.muted, cursor: 'pointer' }}>Bearbeiten</button>
+              <button onClick={() => { if (confirm('Eintrag löschen?')) onDel(t.id); }} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '6px 10px', fontSize: 12, color: T.muted, cursor: 'pointer' }}>Löschen</button>
+            </div>
           </div>
         ))}
       </div>
