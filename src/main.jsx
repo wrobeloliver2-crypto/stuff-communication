@@ -298,35 +298,79 @@ const LoginPage = ({ loginMode, setLoginMode, employees, onEmployeeLogin, onEmpl
 };
 
 // ============================================================================
+// ACCORDION CARD COMPONENT
+// ============================================================================
+const AccordionCard = ({ title, icon, category, text, details, isOpen, onToggle, children }) => (
+  <div 
+    style={{
+      ...styles.accordionCard,
+      background: getCategoryGradient(category),
+    }}
+    onClick={onToggle}
+  >
+    <div style={styles.cardHeader}>
+      <div style={styles.cardTitle}>
+        <span style={{ fontSize: '24px', marginRight: '12px' }}>{icon}</span>
+        <div>
+          <h4 style={{ margin: '0 0 4px' }}>{title}</h4>
+          {text && <small style={{ color: 'rgba(255,255,255,0.8)' }}>{text}</small>}
+        </div>
+      </div>
+      <span style={{ fontSize: '20px', transition: 'transform 0.3s' }}>
+        {isOpen ? '▼' : '▶'}
+      </span>
+    </div>
+    
+    {isOpen && (
+      <div style={styles.cardContent}>
+        {children || details}
+      </div>
+    )}
+  </div>
+);
+
+// ============================================================================
 // EMPLOYEE DASHBOARD
 // ============================================================================
 const EmployeeDashboard = ({ currentUser, news, messages, onMarkNewsRead, onMarkMessageRead, onLogout }) => {
   const [mobileTab, setMobileTab] = useState('news');
+  const [expandedCards, setExpandedCards] = useState({});
   const isMobile = window.innerWidth < 768;
+
+  const toggleCard = (cardId) => {
+    setExpandedCards(prev => ({
+      ...prev,
+      [cardId]: !prev[cardId]
+    }));
+  };
 
   return (
     <div style={styles.employeeContainer}>
       {/* HEADER */}
-      <div style={{ ...styles.header, backgroundColor: '#2d5016' }}>
+      <div style={{ ...styles.header, background: 'linear-gradient(135deg, #2d5016 0%, #1a3009 100%)' }}>
         <div>
-          <h2 style={{ margin: 0, color: 'white' }}>📱 {currentUser.name}</h2>
+          <h2 style={{ margin: 0, color: 'white' }}>👤 {currentUser.name}</h2>
           <small style={{ color: '#ddd' }}>{currentUser.role}</small>
         </div>
-        <button onClick={onLogout} style={styles.logoutBtn}>Logout</button>
+        <button onClick={onLogout} style={styles.logoutBtn}>🚪 Logout</button>
       </div>
 
       {isMobile ? (
         <>
           {/* MOBILE VIEW */}
           <div style={{ flex: 1, overflowY: 'auto', padding: '1rem' }}>
-            {mobileTab === 'news' && <NewsFeed news={news} onMarkRead={onMarkNewsRead} />}
-            {mobileTab === 'postfach' && <Postfach messages={messages} onMarkRead={onMarkMessageRead} />}
+            {mobileTab === 'news' && <NewsFeedCards news={news} onMarkRead={onMarkNewsRead} expandedCards={expandedCards} toggleCard={toggleCard} />}
+            {mobileTab === 'info' && <InfoSection expandedCards={expandedCards} toggleCard={toggleCard} />}
+            {mobileTab === 'postfach' && <PostfachCards messages={messages} onMarkRead={onMarkMessageRead} expandedCards={expandedCards} toggleCard={toggleCard} />}
           </div>
 
           {/* BOTTOM NAVIGATION */}
           <div style={styles.bottomNav}>
             <button onClick={() => setMobileTab('news')} style={{ ...styles.navBtn, backgroundColor: mobileTab === 'news' ? '#2d5016' : '#f0f0f0', color: mobileTab === 'news' ? 'white' : '#333' }}>
               📰 News
+            </button>
+            <button onClick={() => setMobileTab('info')} style={{ ...styles.navBtn, backgroundColor: mobileTab === 'info' ? '#c8818c' : '#f0f0f0', color: mobileTab === 'info' ? 'white' : '#333' }}>
+              ℹ️ Info
             </button>
             <button onClick={() => setMobileTab('postfach')} style={{ ...styles.navBtn, backgroundColor: mobileTab === 'postfach' ? '#2d5016' : '#f0f0f0', color: mobileTab === 'postfach' ? 'white' : '#333' }}>
               📧 Postfach
@@ -335,15 +379,21 @@ const EmployeeDashboard = ({ currentUser, news, messages, onMarkNewsRead, onMark
         </>
       ) : (
         <>
-          {/* DESKTOP VIEW - WIDGETS */}
-          <div style={styles.dashboardGrid}>
-            <div style={styles.widget}>
-              <h3>📰 Firmen-News</h3>
-              <NewsFeed news={news} onMarkRead={onMarkNewsRead} />
+          {/* DESKTOP VIEW - CARDS */}
+          <div style={styles.dashboardContent}>
+            <div style={styles.dashboardSection}>
+              <h2 style={{ color: '#2d5016', marginBottom: '20px' }}>📰 Firmen-News</h2>
+              <NewsFeedCards news={news} onMarkRead={onMarkNewsRead} expandedCards={expandedCards} toggleCard={toggleCard} />
             </div>
-            <div style={styles.widget}>
-              <h3>📧 Persönliches Postfach</h3>
-              <Postfach messages={messages} onMarkRead={onMarkMessageRead} />
+            
+            <div style={styles.dashboardSection}>
+              <h2 style={{ color: '#c8818c', marginBottom: '20px' }}>ℹ️ Informationen</h2>
+              <InfoSection expandedCards={expandedCards} toggleCard={toggleCard} />
+            </div>
+
+            <div style={styles.dashboardSection}>
+              <h2 style={{ color: '#2d5016', marginBottom: '20px' }}>📧 Persönliches Postfach</h2>
+              <PostfachCards messages={messages} onMarkRead={onMarkMessageRead} expandedCards={expandedCards} toggleCard={toggleCard} />
             </div>
           </div>
         </>
@@ -352,11 +402,191 @@ const EmployeeDashboard = ({ currentUser, news, messages, onMarkNewsRead, onMark
   );
 };
 
+// ============================================================================
+// NEWS FEED WITH ACCORDION CARDS
+// ============================================================================
+const NewsFeedCards = ({ news, onMarkRead, expandedCards, toggleCard }) => (
+  <div>
+    {news.length === 0 && <p style={{ color: '#999', textAlign: 'center', padding: '2rem' }}>Keine News vorhanden</p>}
+    {news.map(n => (
+      <AccordionCard
+        key={n.id}
+        icon={getCategoryIcon(n.category)}
+        title={n.title}
+        category={n.category}
+        text={n.text.substring(0, 60) + '...'}
+        isOpen={expandedCards[`news-${n.id}`]}
+        onToggle={() => { toggleCard(`news-${n.id}`); onMarkRead(n.id); }}
+      >
+        <div>
+          <p style={{ margin: '0 0 12px', lineHeight: '1.5' }}>{n.text}</p>
+          {n.attachment && <p style={{ fontSize: '12px', color: '#888' }}>📎 Datei angehängt</p>}
+          <small style={{ color: 'rgba(255,255,255,0.7)' }}>{n.created}</small>
+        </div>
+      </AccordionCard>
+    ))}
+  </div>
+);
+
+// ============================================================================
+// INFO SECTION (PhysioCoaching, Team, etc.)
+// ============================================================================
+const InfoSection = ({ expandedCards, toggleCard }) => (
+  <div>
+    <AccordionCard
+      icon="💚"
+      title="PhysioCoaching"
+      category="physio"
+      text="1:1 Coaching am Reformer mit Hanna & Nico"
+      isOpen={expandedCards['physiocoaching']}
+      onToggle={() => toggleCard('physiocoaching')}
+    >
+      <div style={{ color: 'white' }}>
+        <p><strong>Was ist PhysioCoaching?</strong></p>
+        <p>1:1 Training am Reformer mit hochqualifizierten Physiotherapeuten. Für dich maßgeschneidert, sicher und effektiv.</p>
+        
+        <p><strong>Preis & Dauer:</strong> 89€ · 60 Minuten</p>
+        
+        <p><strong>Der Ablauf:</strong></p>
+        <ul style={{ margin: '8px 0', paddingLeft: '20px' }}>
+          <li>✓ Physiotherapeutisches Check-in</li>
+          <li>✓ Aufwärmen am Reformer</li>
+          <li>✓ Individuelles Krafttraining</li>
+          <li>✓ Entspannung & Tipps</li>
+        </ul>
+
+        <p><strong>Für wen perfekt:</strong></p>
+        <ul style={{ margin: '8px 0', paddingLeft: '20px' }}>
+          <li>✓ Mit Rücken-, Knie- oder Schulterproblemen</li>
+          <li>✓ Nach Operationen oder Verletzungen</li>
+          <li>✓ Wenn Sicherheit beim Training wichtig ist</li>
+          <li>✓ Für saubere Technik & echte Ergebnisse</li>
+        </ul>
+        
+        <button style={{ ...styles.button, marginTop: '12px', backgroundColor: '#2d5016' }}>
+          📧 Anfrage senden
+        </button>
+      </div>
+    </AccordionCard>
+
+    <AccordionCard
+      icon="👥"
+      title="Deine Coaches"
+      category="team"
+      text="Hanna & Nico — Physiotherapeuten mit Leidenschaft"
+      isOpen={expandedCards['team']}
+      onToggle={() => toggleCard('team')}
+    >
+      <div style={{ color: 'white' }}>
+        <p><strong>🧑‍⚕️ Hanna — Physiotherapeutin & Gründerin</strong></p>
+        <p>20+ Jahre Erfahrung. Spezialisiert auf Frauen in den Wechseljahren. Für sie geht Physiocoaching ganzheitlich — Körper UND Seele.</p>
+
+        <p style={{ marginTop: '16px' }}><strong>🧑‍⚕️ Nico — Physiotherapeut & Fitnesscoach</strong></p>
+        <p>15+ Jahre sportspezifische Erfahrung. Erkennt unrunde Bewegungsabläufe sofort und optimiert sie gezielt — nach Reha oder beim Wiedereinstieg ins Training.</p>
+      </div>
+    </AccordionCard>
+
+    <AccordionCard
+      icon="🏥"
+      title="Physiotherapie"
+      category="physio"
+      text="Krankengymnastik, Manuelle Therapie, Massage"
+      isOpen={expandedCards['physio']}
+      onToggle={() => toggleCard('physio')}
+    >
+      <div style={{ color: 'white' }}>
+        <p>Klassische Physiotherapie für deine Gesundheit:</p>
+        <ul style={{ paddingLeft: '20px' }}>
+          <li>✓ Krankengymnastik (KGG)</li>
+          <li>✓ Manuelle Therapie</li>
+          <li>✓ Lymphdrainage</li>
+          <li>✓ Massage & Entspannung</li>
+          <li>✓ Prävention & Schmerzmanagement</li>
+        </ul>
+        <p style={{ marginTop: '12px', fontSize: '12px' }}>Auch ohne ärztliche Verordnung möglich!</p>
+      </div>
+    </AccordionCard>
+
+    <AccordionCard
+      icon="🎀"
+      title="Pilates Company"
+      category="pilates"
+      text="Reformer, Aerial Yoga, Classic Pilates"
+      isOpen={expandedCards['pilates']}
+      onToggle={() => toggleCard('pilates')}
+    >
+      <div style={{ color: 'white' }}>
+        <p>Kurse für jeden Körper:</p>
+        <ul style={{ paddingLeft: '20px' }}>
+          <li>✓ Reformer Pilates</li>
+          <li>✓ Aerial Yoga (in der Hängematte)</li>
+          <li>✓ Classic Pilates (auf der Matte)</li>
+          <li>✓ Kleine Gruppen (max. 10 Personen)</li>
+        </ul>
+        <p style={{ marginTop: '12px', fontSize: '12px' }}>Mo-Sa · Morgens, mittags, abends — es passt zu dir!</p>
+      </div>
+    </AccordionCard>
+  </div>
+);
+
+// ============================================================================
+// POSTFACH WITH ACCORDION CARDS
+// ============================================================================
+const PostfachCards = ({ messages, onMarkRead, expandedCards, toggleCard }) => (
+  <div>
+    {messages.length === 0 && <p style={{ color: '#999', textAlign: 'center', padding: '2rem' }}>Keine Nachrichten</p>}
+    {messages.map(m => (
+      <AccordionCard
+        key={m.id}
+        icon="📧"
+        title={m.title}
+        category="message"
+        text={m.text.substring(0, 60) + '...'}
+        isOpen={expandedCards[`msg-${m.id}`]}
+        onToggle={() => { toggleCard(`msg-${m.id}`); onMarkRead(m.id); }}
+      >
+        <div style={{ color: 'white' }}>
+          <p style={{ margin: '0 0 12px' }}>{m.text}</p>
+          {m.attachment && <p style={{ fontSize: '12px' }}>📎 Datei angehängt</p>}
+          <small style={{ color: 'rgba(255,255,255,0.7)' }}>{m.created}</small>
+        </div>
+      </AccordionCard>
+    ))}
+  </div>
+);
+
+// ============================================================================
+// HELPER: CATEGORY ICONS & GRADIENTS
+// ============================================================================
+const getCategoryIcon = (category) => {
+  const icons = {
+    'Ankündigungen': '📢',
+    'Events': '🎉',
+    'Info': 'ℹ️',
+    'Schichten': '📅'
+  };
+  return icons[category] || '📌';
+};
+
+const getCategoryGradient = (category) => {
+  const gradients = {
+    'Ankündigungen': 'linear-gradient(135deg, #c8818c 0%, #a8616c 100%)',
+    'Events': 'linear-gradient(135deg, #2d5016 0%, #1a3009 100%)',
+    'Info': 'linear-gradient(135deg, #5a9bd5 0%, #3d7bb8 100%)',
+    'Schichten': 'linear-gradient(135deg, #f5a623 0%, #d68a00 100%)',
+    'physio': 'linear-gradient(135deg, #2d5016 0%, #1a3009 100%)',
+    'pilates': 'linear-gradient(135deg, #c8818c 0%, #a8616c 100%)',
+    'team': 'linear-gradient(135deg, #7b5ba6 0%, #5c3f85 100%)',
+    'message': 'linear-gradient(135deg, #c8818c 0%, #a8616c 100%)',
+  };
+  return gradients[category] || 'linear-gradient(135deg, #999 0%, #666 100%)';
+};
+
 const NewsFeed = ({ news, onMarkRead }) => (
   <div>
     {news.length === 0 && <p style={{ color: '#999', textAlign: 'center', padding: '2rem' }}>Keine News vorhanden</p>}
     {news.map(n => {
-      const isRead = n.readBy.some(id => id === true); // simplified
+      const isRead = n.readBy.some(id => id === true);
       return (
         <div key={n.id} onClick={() => onMarkRead(n.id)} style={{ ...styles.newsCard, opacity: isRead ? 0.7 : 1 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
@@ -547,8 +777,51 @@ const styles = {
   employeeContainer: { display: 'flex', flexDirection: 'column', minHeight: '100vh', backgroundColor: '#f5f5f5' },
   header: { padding: '15px 20px', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
   logoutBtn: { padding: '6px 12px', backgroundColor: 'rgba(255,255,255,0.2)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' },
-  dashboardGrid: { flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', padding: '20px', maxWidth: '1200px', margin: '0 auto', width: '100%' },
-  widget: { backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', overflowY: 'auto', maxHeight: 'calc(100vh - 120px)' },
+  // ============================================================================
+  // ACCORDION CARD STYLES
+  // ============================================================================
+  accordionCard: {
+    borderRadius: '12px',
+    marginBottom: '12px',
+    color: 'white',
+    cursor: 'pointer',
+    overflow: 'hidden',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+    transition: 'transform 0.2s, box-shadow 0.2s',
+  },
+  cardHeader: {
+    padding: '16px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    cursor: 'pointer',
+  },
+  cardTitle: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '12px',
+    flex: 1,
+  },
+  cardContent: {
+    padding: '12px 16px 16px',
+    borderTop: '1px solid rgba(255,255,255,0.2)',
+    backgroundColor: 'rgba(0,0,0,0.1)',
+  },
+
+  // ============================================================================
+  // DASHBOARD LAYOUT
+  // ============================================================================
+  dashboardContent: {
+    flex: 1,
+    overflowY: 'auto',
+    padding: '20px',
+    maxWidth: '1400px',
+    margin: '0 auto',
+    width: '100%',
+  },
+  dashboardSection: {
+    marginBottom: '40px',
+  },
   newsCard: { backgroundColor: 'white', padding: '12px', borderRadius: '6px', marginBottom: '10px', cursor: 'pointer', borderLeft: '3px solid #2d5016' },
   messageCard: { backgroundColor: 'white', padding: '12px', borderRadius: '6px', marginBottom: '10px', cursor: 'pointer', borderLeft: '3px solid #c8818c' },
   bottomNav: { display: 'flex', gap: '10px', padding: '10px', backgroundColor: 'white', borderTop: '1px solid #eee' },
