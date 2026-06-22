@@ -34,11 +34,14 @@ const EMPLOYEES = [
   { id: 'finn', name: 'Finn Meyer', role: 'PhysioPro Staff', company: 'PhysioPro', pin: null, pinSet: false },
   { id: 'phillip', name: 'Phillip Opelka', role: 'PhysioPro Staff', company: 'PhysioPro', pin: null, pinSet: false },
   { id: 'imo', name: 'Imo Thomsen', role: 'PhysioPro Staff', company: 'PhysioPro', pin: null, pinSet: false },
-  { id: 'tina', name: 'Tina Schmidt', role: 'Pilates Trainer', company: 'Pilates', pin: null, pinSet: false },
-  { id: 'natascha', name: 'Natascha Müller', role: 'Pilates Trainer', company: 'Pilates', pin: null, pinSet: false },
-  { id: 'ina', name: 'Ina Weber', role: 'Pilates Trainer', company: 'Pilates', pin: null, pinSet: false },
-  { id: 'katy', name: 'Katy Hoffmann', role: 'Pilates Trainer', company: 'Pilates', pin: null, pinSet: false },
-  { id: 'paula', name: 'Paula Krause', role: 'Pilates Trainer', company: 'Pilates', pin: null, pinSet: false },
+  { id: 'luca', name: 'Luca Malz', role: 'Verwaltung', company: 'Beide', pin: null, pinSet: false },
+  { id: 'ina', name: 'Ina Schmökel', role: 'Pilates Trainer', company: 'Pilates', pin: null, pinSet: false },
+  { id: 'olga', name: 'Olga Uplegger', role: 'Pilates Trainer', company: 'Pilates', pin: null, pinSet: false },
+  { id: 'natalia', name: 'Natalia Semenova', role: 'Pilates Trainer', company: 'Pilates', pin: null, pinSet: false },
+  { id: 'britta', name: 'Britta Leder', role: 'Pilates Trainer', company: 'Pilates', pin: null, pinSet: false },
+  { id: 'laura', name: 'Laura Sachsenhauser', role: 'Pilates Trainer', company: 'Pilates', pin: null, pinSet: false },
+  { id: 'paula', name: 'Paula-Charlot Smettons', role: 'Pilates Trainer', company: 'Pilates', pin: null, pinSet: false },
+  { id: 'katharina', name: 'Katharina Piesik', role: 'Pilates Trainer', company: 'Pilates', pin: null, pinSet: false },
 ];
 
 const load = (k, f) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : f; } catch { return f; } };
