@@ -16,49 +16,47 @@ exports.handler = async (event, context) => {
     try {
       credentials = JSON.parse(keyJson);
     } catch (e) {
-      return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'JSON-Key ungültig: ' + e.message }) };
+      return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'JSON ungültig: ' + e.message }) };
     }
 
     const storage = new Storage({ credentials, projectId: credentials.project_id });
-    const bucketName = 'stuff-intranet-files';
+    const bucket = storage.bucket('stuff-intranet-files');
+    const file = bucket.file('test/connection-check.txt');
 
-    // Erst alle Buckets im Projekt listen
-    let allBuckets = [];
-    try {
-      const [buckets] = await storage.getBuckets();
-      allBuckets = buckets.map(b => b.name);
-    } catch(e) {
-      allBuckets = ['Fehler beim Listen: ' + e.message];
-    }
+    // Direkt hochladen — kein buckets.list, kein exists()
+    await file.save('Verbindungstest ' + new Date().toISOString(), {
+      contentType: 'text/plain',
+      metadata: { source: 'gcs-test-function' },
+    });
 
-    // Dann spezifischen Bucket prüfen
-    let bucketExists = false;
-    let bucketError = null;
-    try {
-      const [exists] = await storage.bucket(bucketName).exists();
-      bucketExists = exists;
-    } catch(e) {
-      bucketError = e.message;
-    }
+    // Signed URL generieren (1 Stunde gültig)
+    const [url] = await file.getSignedUrl({
+      action: 'read',
+      expires: Date.now() + 60 * 60 * 1000,
+    });
 
     return {
       statusCode: 200,
       headers,
       body: JSON.stringify({
-        ok: bucketExists,
+        ok: true,
         project_id: credentials.project_id,
         client_email: credentials.client_email,
-        target_bucket: bucketName,
-        bucket_found: bucketExists,
-        bucket_error: bucketError,
-        all_buckets_visible: allBuckets,
+        bucket: 'stuff-intranet-files',
+        test_file: 'test/connection-check.txt',
+        signed_url: url,
+        message: 'Upload und Signed URL erfolgreich',
       }),
     };
   } catch (err) {
     return {
       statusCode: 500,
       headers,
-      body: JSON.stringify({ ok: false, error: err.message }),
+      body: JSON.stringify({
+        ok: false,
+        project_id: (() => { try { return JSON.parse(process.env.GCS_SERVICE_ACCOUNT_KEY).project_id; } catch(e) { return 'unbekannt'; } })(),
+        error: err.message,
+      }),
     };
   }
 };
