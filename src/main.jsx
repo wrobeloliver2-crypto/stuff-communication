@@ -233,43 +233,48 @@ const NewsFeed = ({ news }) => (
   <div>
     <Label>Firmen-News</Label>
     {news.length === 0 && <Empty text="Noch keine News veröffentlicht." />}
-    {news.map(n => <NewsCard key={n.id} n={n} />)}
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(330px,1fr))', gap: 16 }}>
+      {news.map(n => <NewsCard key={n.id} n={n} />)}
+    </div>
   </div>
 );
 
-const NewsCard = ({ n }) => {
-  const [open, setOpen] = useState(false);
+const PhotoPlaceholder = ({ firm, abbr }) => {
+  const f = FIRMS[firm] || FIRMS.beide;
+  const bg = f.dot === 'split'
+    ? 'linear-gradient(135deg,' + T.green + ' 0%,' + T.green + ' 50%,' + T.mauveSoft + ' 50%,' + T.mauveSoft + ' 100%)'
+    : (firm === 'pilates' ? T.mauveSoft : T.green);
   return (
-    <div style={{ background: T.surface, border: '0.5px solid ' + T.line, borderRadius: 10, overflow: 'hidden', marginBottom: 9 }}>
-      <div onClick={() => setOpen(o => !o)} style={{ padding: '13px 15px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 13 }}>
-        <Marker letter={catLetter(n.category)} tone={catTone(n.category)} />
-        <div style={{ flex: 1 }}>
-          <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: T.ink }}>{n.title}</p>
-          <div style={{ margin: '3px 0 0', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <FirmTag firm={n.firm} />
-            <span style={{ fontSize: 11, color: T.faint, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{n.category} · {n.created}</span>
-          </div>
+    <div style={{ aspectRatio: '16/9', background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+      <span style={{ fontSize: 30, fontWeight: 500, color: 'rgba(255,255,255,0.85)', letterSpacing: '0.1em' }}>{abbr}</span>
+    </div>
+  );
+};
+
+const NewsCard = ({ n }) => {
+  const [expanded, setExpanded] = useState(false);
+  const long = n.text.length > 220;
+  const preview = long && !expanded ? n.text.slice(0, 220).trimEnd() + '…' : n.text;
+  const hasPhoto = n.photos && n.photos.length > 0 && n.photos[0].url;
+  const abbr = (FIRMS[n.firm] || FIRMS.beide).label === 'Pilates Company' ? 'PC' : n.firm === 'physio' ? 'PP' : 'PP·PC';
+  return (
+    <div style={{ background: T.surface, border: '0.5px solid ' + T.line, borderRadius: 12, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      {hasPhoto
+        ? <div style={{ aspectRatio: '16/9', overflow: 'hidden' }}><img src={n.photos[0].url} alt={n.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /></div>
+        : <PhotoPlaceholder firm={n.firm} abbr={abbr} />}
+      <div style={{ padding: '1.1rem 1.2rem 1.3rem', display: 'flex', flexDirection: 'column', flex: 1 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 9, flexWrap: 'wrap' }}>
+          <FirmTag firm={n.firm} />
+          <span style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: T[catTone(n.category) === 'mauve' ? 'mauve' : 'green'], border: '1px solid ' + T.line, borderRadius: 20, padding: '3px 9px' }}>{n.category}</span>
         </div>
-        {n.photos && n.photos.length > 0 && <span style={{ fontSize: 11, color: T.faint }}>{n.photos.length} ▦</span>}
-        <span style={{ color: '#c4bfb2', fontSize: 12 }}>{open ? '▴' : '▾'}</span>
+        <h3 style={{ margin: '0 0 9px', fontSize: 17, fontWeight: 500, color: T.ink, lineHeight: 1.3 }}>{n.title}</h3>
+        <p style={{ margin: '0 0 10px', fontSize: 13.5, lineHeight: 1.6, color: T.muted, whiteSpace: 'pre-wrap', flex: 1 }}>{preview}</p>
+        {long && <button onClick={() => setExpanded(e => !e)} style={{ alignSelf: 'flex-start', background: 'none', border: 'none', padding: 0, color: T.mauve, fontSize: 13, cursor: 'pointer', fontWeight: 500 }}>{expanded ? 'weniger anzeigen' : 'mehr lesen'}</button>}
+        {n.eventDate && <p style={{ margin: '10px 0 0', fontSize: 13, color: T.green }}>📅 {n.eventDate}</p>}
+        {n.link && <p style={{ margin: '8px 0 0' }}><a href={n.link} target="_blank" rel="noopener noreferrer" style={{ color: T.mauve, fontSize: 13 }}>→ {n.linkLabel || n.link}</a></p>}
+        {n.attachment && <div><FileChip name={n.attachment} /></div>}
+        <p style={{ margin: '12px 0 0', fontSize: 11, color: T.faint, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{n.created}</p>
       </div>
-      {open && (
-        <div style={{ padding: '0 15px 16px 58px', fontSize: 13, lineHeight: 1.65, color: T.muted }}>
-          <p style={{ margin: '0 0 10px', whiteSpace: 'pre-wrap' }}>{n.text}</p>
-          {n.photos && n.photos.length > 0 && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(120px,1fr))', gap: 8, margin: '0 0 10px' }}>
-              {n.photos.map((p, i) => (
-                <div key={i} style={{ aspectRatio: '4/3', background: T.chip, borderRadius: 8, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: T.faint }}>
-                  {p.url ? <img src={p.url} alt={p.name || ''} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : '▦ ' + (p.name || 'Foto')}
-                </div>
-              ))}
-            </div>
-          )}
-          {n.eventDate && <p style={{ margin: '0 0 6px', color: T.green }}>📅 {n.eventDate}</p>}
-          {n.link && <p style={{ margin: '0 0 6px' }}><a href={n.link} target="_blank" rel="noopener noreferrer" style={{ color: T.mauve }}>→ {n.linkLabel || n.link}</a></p>}
-          {n.attachment && <FileChip name={n.attachment} />}
-        </div>
-      )}
     </div>
   );
 };
@@ -279,24 +284,24 @@ const ToolsList = ({ tools }) => (
     <Label>Tools & Links</Label>
     <p style={{ fontSize: 12, color: T.muted, margin: '-0.4rem 0 1.2rem', lineHeight: 1.6 }}>Nützliche Werkzeuge und Verweise, auf die du dauerhaft zugreifen kannst.</p>
     {tools.length === 0 && <Empty text="Noch keine Tools hinterlegt." />}
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(240px,1fr))', gap: 12 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))', gap: 14 }}>
       {tools.map(t => {
         const inner = (
           <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-              <div style={{ width: 38, height: 38, borderRadius: 9, background: T.chip, color: t.soon ? T.faint : T.green, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 500, flexShrink: 0 }}>{t.abbr}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 13 }}>
+              <div style={{ width: 46, height: 46, borderRadius: 11, background: T.chip, color: t.soon ? T.faint : T.green, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 500, flexShrink: 0 }}>{t.abbr}</div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: T.ink }}>{t.title}</p>
+                <p style={{ margin: '0 0 2px', fontSize: 16, fontWeight: 500, color: T.ink }}>{t.title}</p>
                 <FirmTag firm={t.firm} />
               </div>
               {t.soon
                 ? <span style={{ fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: T.mauve, border: '1px solid ' + T.mauveSoft, borderRadius: 20, padding: '3px 8px' }}>in Arbeit</span>
-                : <span style={{ color: T.faint, fontSize: 14 }}>↗</span>}
+                : <span style={{ color: T.faint, fontSize: 16 }}>↗</span>}
             </div>
-            <p style={{ margin: 0, fontSize: 12, color: T.muted, lineHeight: 1.5 }}>{t.desc}</p>
+            <p style={{ margin: 0, fontSize: 13, color: T.muted, lineHeight: 1.55 }}>{t.desc}</p>
           </>
         );
-        const base = { background: T.surface, border: '0.5px solid ' + T.line, borderRadius: 12, padding: '1.1rem', display: 'flex', flexDirection: 'column', gap: 10 };
+        const base = { background: T.surface, border: '0.5px solid ' + T.line, borderRadius: 12, padding: '1.4rem', display: 'flex', flexDirection: 'column', gap: 13, minHeight: 120 };
         return t.soon || !t.link
           ? <div key={t.id} style={{ ...base, opacity: t.soon ? 0.72 : 1, cursor: 'default' }}>{inner}</div>
           : <a key={t.id} href={t.link} target="_blank" rel="noopener noreferrer" style={{ ...base, textDecoration: 'none' }}>{inner}</a>;
