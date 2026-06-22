@@ -46,6 +46,32 @@ const EMPLOYEES = [
   { id: 'natascha', name: 'Natascha Diestel-Babakerd', role: 'Pilates Trainer', company: 'Pilates', pin: null, pinSet: false },
 ];
 
+const UPLOAD_URL = '/.netlify/functions/upload';
+const uploadFile = async (file, folder = 'uploads') => {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('folder', folder);
+  const res = await fetch(UPLOAD_URL, { method: 'POST', body: form });
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.error || 'Upload fehlgeschlagen');
+  return data;
+};
+
+const DEFAULT_NEWS = [
+  {
+    id: 'n_anfragemgmt', firm: 'physio', category: 'Info',
+    title: 'PhysioPro Anfragemanagement — professionell aufgestellt für unser Wachstum',
+    text: 'PhysioPro Lübeck wächst. Wir werden mehr, wir kommen weiter — und genau deshalb stellen wir uns auch dort professionell auf, wo unsere Zukunft beginnt: bei der Gewinnung neuer Patientinnen und Patienten.\n\nMit unserem eigenen Anfragemanagement bündeln wir ab sofort jede eingehende Anfrage an einer zentralen Stelle und führen sie auf einem klaren Weg von „eingegangen" bis „erledigt". Jede Anfrage bekommt ihren festen Platz, eine eindeutige Zuständigkeit und einen nachvollziehbaren Verlauf. Nichts geht verloren, niemand wird vergessen, und jede Anfrage wird so schnell und verbindlich beantwortet, wie es Menschen erwarten dürfen, die sich uns anvertrauen.\n\nDas ist mehr als ein Werkzeug — es ist ein Bekenntnis dazu, wie wir arbeiten wollen: aufmerksam, verlässlich und auf der Höhe der Zeit. Jeder erste Kontakt ist die Chance, einen Menschen langfristig für PhysioPro zu gewinnen. Diese Chance wollen wir nicht dem Zufall überlassen.\n\nSo gestalten wir die Zukunft von PhysioPro Lübeck — Schritt für Schritt, mit einem Team, das wächst, und mit Strukturen, die mit uns mitwachsen.',
+    photos: [], link: null, linkLabel: null, eventDate: null, attachment: null, created: '22.06.2026, 09:00',
+  },
+];
+
+const DEFAULT_TOOLS = [
+  { id: 't1', abbr: 'ZE', title: 'Zeiterfassung', desc: 'Arbeitszeiten erfassen und einsehen', link: 'https://physiozeiterfassung.netlify.app', firm: 'physio' },
+  { id: 't2', abbr: 'TA', title: 'Trainer App', desc: 'Wird gerade überarbeitet — bald noch einfacher.', link: '', firm: 'pilates', soon: true },
+  { id: 't3', abbr: 'FB', title: 'Fahrtenbuch', desc: 'Dienstfahrten dokumentieren', link: 'https://physiofahrtenbuch.netlify.app', firm: 'physio' },
+];
+
 const API = '/.netlify/functions/data';
 
 const apiGet = async (collection) => {
@@ -828,3 +854,4 @@ const AdminAudit = ({ audit }) => (
 );
 
 ReactDOM.createRoot(document.getElementById('root')).render(<React.StrictMode><App /></React.StrictMode>);
+
