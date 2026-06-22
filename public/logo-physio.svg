@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 480" role="img" aria-label="Physio Pro Lübeck">
+  <g fill="none" stroke="#55725f" stroke-width="18" stroke-linecap="square" stroke-linejoin="miter">
+  <path d="M 70 140 L 70 70 L 140 70" />
+  <path d="M 620 70 L 690 70 L 690 140" />
+  <path d="M 70 340 L 70 410 L 140 410" />
+  <path d="M 620 410 L 690 410 L 690 340" />
+  </g>
+  <text x="380.0" y="171.9" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-weight="400" font-size="82" letter-spacing="2" fill="#55725f">Physio</text>
+  <text x="380.0" y="267.9" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-weight="400" font-size="82" letter-spacing="2" fill="#55725f">Pro</text>
+  <text x="380.0" y="363.9" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-weight="400" font-size="82" letter-spacing="2" fill="#55725f">Lübeck</text>
+  </svg>

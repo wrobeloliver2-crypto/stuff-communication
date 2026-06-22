@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
-import logoPhysio from '/logo-physio.png';
-import logoPilates from '/logo-pilates.png';
+import logoPhysio from '/logo-physio.svg';
+import logoPilates from '/logo-pilates.svg';
 
 const T = {
   bg: '#faf8f4', surface: '#ffffff', line: '#e6e1d6', lineSoft: '#ece7dc',
