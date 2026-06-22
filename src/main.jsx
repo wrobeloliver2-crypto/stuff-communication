@@ -50,15 +50,22 @@ const EMPLOYEES = [
 const load = (k, f) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : f; } catch { return f; } };
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 
+const DEFAULT_TOOLS = [
+  { id: 't1', abbr: 'ZE', title: 'Zeiterfassung', desc: 'Arbeitszeiten erfassen und einsehen', link: 'https://physiozeiterfassung.netlify.app', firm: 'beide' },
+  { id: 't2', abbr: 'FB', title: 'Fahrtenbuch', desc: 'Dienstfahrten dokumentieren', link: 'https://physiofahrtenbuch.netlify.app', firm: 'physio' },
+];
+
 const App = () => {
   const [page, setPage] = useState('login');
   const [user, setUser] = useState(null);
   const [employees, setEmployees] = useState(() => load('si_employees', EMPLOYEES));
   const [news, setNews] = useState(() => load('si_news', []));
+  const [tools, setTools] = useState(() => load('si_tools', DEFAULT_TOOLS));
   const [messages, setMessages] = useState(() => load('si_messages', []));
   const [audit, setAudit] = useState(() => load('si_audit', []));
   useEffect(() => save('si_employees', employees), [employees]);
   useEffect(() => save('si_news', news), [news]);
+  useEffect(() => save('si_tools', tools), [tools]);
   useEffect(() => save('si_messages', messages), [messages]);
   useEffect(() => save('si_audit', audit), [audit]);
 
@@ -71,14 +78,16 @@ const App = () => {
 
   const addNews = n => { setNews(x => [{ ...n, id: Date.now(), created: new Date().toLocaleString('de-DE') }, ...x]); logA('News erstellt', user.name, n.title + ' (' + FIRMS[n.firm].label + ')'); };
   const delNews = id => { setNews(x => x.filter(n => n.id !== id)); logA('News gelöscht', user.name, '#' + id); };
+  const addTool = t => { setTools(x => [...x, { ...t, id: 'tool' + Date.now() }]); logA('Tool/Link erstellt', user.name, t.title); };
+  const delTool = id => { setTools(x => x.filter(t => t.id !== id)); logA('Tool/Link gelöscht', user.name, '#' + id); };
   const sendMessage = m => { setMessages(x => [{ ...m, id: Date.now(), created: new Date().toLocaleString('de-DE'), sender: user.name, readBy: [], replies: [] }, ...x]); logA('Nachricht gesendet', user.name, '"' + m.title + '" → ' + [...m.toGroups, ...m.toIndividuals].join(', ')); };
   const markRead = id => setMessages(x => x.map(m => m.id === id && !m.readBy.some(r => r.id === user.id) ? { ...m, readBy: [...m.readBy, { id: user.id, name: user.name, ts: new Date().toLocaleString('de-DE') }] } : m));
   const addReply = (id, text, attachment) => { setMessages(x => x.map(m => m.id === id ? { ...m, replies: [...(m.replies || []), { from: user.name, text, attachment, ts: new Date().toLocaleString('de-DE') }] } : m)); logA('Antwort im Bereich', user.name, 'zu #' + id); };
   const resetPin = id => { setEmployees(es => es.map(e => e.id === id ? { ...e, pin: null, pinSet: false } : e)); logA('PIN zurückgesetzt', user.name, id); };
 
   if (page === 'login') return <Login employees={employees} onPinSetup={pinSetup} onEmployeeLogin={employeeLogin} onAdminLogin={adminLogin} />;
-  if (page === 'employee' && user) return <Employee user={user} news={news} messages={messages.filter(m => forMe(m, user))} onMarkRead={markRead} onReply={addReply} onLogout={logout} />;
-  if (page === 'admin' && user?.isAdmin) return <Admin user={user} news={news} messages={messages} employees={employees} audit={audit} onAddNews={addNews} onDelNews={delNews} onSend={sendMessage} onResetPin={resetPin} onLogout={logout} />;
+  if (page === 'employee' && user) return <Employee user={user} news={news} tools={tools} messages={messages.filter(m => forMe(m, user))} onMarkRead={markRead} onReply={addReply} onLogout={logout} />;
+  if (page === 'admin' && user?.isAdmin) return <Admin user={user} news={news} tools={tools} messages={messages} employees={employees} audit={audit} onAddNews={addNews} onDelNews={delNews} onAddTool={addTool} onDelTool={delTool} onSend={sendMessage} onResetPin={resetPin} onLogout={logout} />;
   return null;
 };
 const forMe = (m, u) => m.toIndividuals.includes(u.id) || m.toGroups.includes(u.role);
@@ -175,7 +184,7 @@ const Login = ({ employees, onPinSetup, onEmployeeLogin, onAdminLogin }) => {
   );
 };
 
-const Employee = ({ user, news, messages, onMarkRead, onReply, onLogout }) => {
+const Employee = ({ user, news, tools, messages, onMarkRead, onReply, onLogout }) => {
   const [tab, setTab] = useState('news');
   const initials = user.name.split(' ').map(w => w[0]).join('').slice(0, 2);
   const unread = messages.filter(m => !m.readBy.some(r => r.id === user.id)).length;
@@ -193,14 +202,14 @@ const Employee = ({ user, news, messages, onMarkRead, onReply, onLogout }) => {
       } />
       <div style={{ background: T.surface, borderBottom: '1px solid ' + T.lineSoft }}>
         <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 1.5rem', display: 'flex', gap: 28 }}>
-          {[['news', 'News'], ['info', 'Info'], ['postfach', 'Mein Bereich' + (unread ? ' · ' + unread : '')]].map(([k, l]) => (
+          {[['news', 'News'], ['tools', 'Tools & Links'], ['postfach', 'Mein Bereich' + (unread ? ' · ' + unread : '')]].map(([k, l]) => (
             <button key={k} onClick={() => setTab(k)} style={{ background: 'none', border: 'none', padding: '14px 0', fontSize: 12, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: 'pointer', color: tab === k ? T.ink : T.faint, borderBottom: tab === k ? '2px solid ' + (k === 'postfach' ? T.mauve : T.green) : '2px solid transparent', marginBottom: -1 }}>{l}</button>
           ))}
         </div>
       </div>
       <div style={{ flex: 1, maxWidth: 1100, margin: '0 auto', width: '100%', padding: '1.75rem 1.5rem', boxSizing: 'border-box' }}>
         {tab === 'news' && <NewsFeed news={news} />}
-        {tab === 'info' && <InfoList />}
+        {tab === 'tools' && <ToolsList tools={tools} />}
         {tab === 'postfach' && <Postfach user={user} messages={messages} onMarkRead={onMarkRead} onReply={onReply} />}
       </div>
     </div>
@@ -252,39 +261,28 @@ const NewsCard = ({ n }) => {
   );
 };
 
-const INFO_CARDS = [
-  { letter: 'P', tone: 'green', firm: 'beide', title: 'PhysioCoaching', sub: '1:1 am Reformer · 89 € · 60 Min', body: '1:1-Training am Reformer mit hochqualifizierten Physiotherapeuten. Ablauf: physiotherapeutisches Check-in, Aufwärmen, individuelles Krafttraining, Ausklang. Coaches: Hanna & Nico.' },
-  { letter: 'R', tone: 'mauve', firm: 'pilates', title: 'Reformer-Pilates', sub: 'alle Level', body: 'Gezieltes Ganzkörpertraining am Reformer – effektiv, gelenkschonend, für alle Level. Kleine Gruppen (max. 1:5–1:8).' },
-  { letter: 'T', tone: 'green', firm: 'physio', title: 'Physiotherapie', sub: 'KG · Manuelle Therapie · Lymphdrainage', body: 'Klassische Physiotherapie: Krankengymnastik, Manuelle Therapie, Lymphdrainage, Massage, Prävention. Auch ohne Verordnung möglich.' },
-  { letter: 'Y', tone: 'mauve', firm: 'pilates', title: 'Yoga & Aerial', sub: 'kleine Gruppen', body: 'Klassisches Yoga sowie Aerial Yoga in der Hängematte – Kraft, Balance und Beweglichkeit.' },
-];
-const InfoList = () => {
-  return (
-    <div>
-      <Label>Informationen & Angebote</Label>
-      {INFO_CARDS.map((c, i) => <InfoCard key={i} c={c} />)}
-    </div>
-  );
-};
-const InfoCard = ({ c }) => {
-  const [open, setOpen] = useState(false);
-  return (
-    <div style={{ background: T.surface, border: '0.5px solid ' + T.line, borderRadius: 10, overflow: 'hidden', marginBottom: 9 }}>
-      <div onClick={() => setOpen(o => !o)} style={{ padding: '13px 15px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 13 }}>
-        <Marker letter={c.letter} tone={c.tone} />
-        <div style={{ flex: 1 }}>
-          <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: T.ink }}>{c.title}</p>
-          <div style={{ margin: '3px 0 0', display: 'flex', alignItems: 'center', gap: 10 }}>
-            <FirmTag firm={c.firm} />
-            <span style={{ fontSize: 11, color: T.faint, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{c.sub}</span>
+const ToolsList = ({ tools }) => (
+  <div>
+    <Label>Tools & Links</Label>
+    <p style={{ fontSize: 12, color: T.muted, margin: '-0.4rem 0 1.2rem', lineHeight: 1.6 }}>Nützliche Werkzeuge und Verweise, auf die du dauerhaft zugreifen kannst.</p>
+    {tools.length === 0 && <Empty text="Noch keine Tools hinterlegt." />}
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(240px,1fr))', gap: 12 }}>
+      {tools.map(t => (
+        <a key={t.id} href={t.link} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', background: T.surface, border: '0.5px solid ' + T.line, borderRadius: 12, padding: '1.1rem', display: 'flex', flexDirection: 'column', gap: 10, transition: 'border-color 0.15s' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
+            <div style={{ width: 38, height: 38, borderRadius: 9, background: T.chip, color: T.green, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 500, flexShrink: 0 }}>{t.abbr}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: T.ink }}>{t.title}</p>
+              <FirmTag firm={t.firm} />
+            </div>
+            <span style={{ color: T.faint, fontSize: 14 }}>↗</span>
           </div>
-        </div>
-        <span style={{ color: '#c4bfb2', fontSize: 12 }}>{open ? '▴' : '▾'}</span>
-      </div>
-      {open && <div style={{ padding: '0 15px 15px 58px', fontSize: 13, lineHeight: 1.65, color: T.muted }}>{c.body}</div>}
+          <p style={{ margin: 0, fontSize: 12, color: T.muted, lineHeight: 1.5 }}>{t.desc}</p>
+        </a>
+      ))}
     </div>
-  );
-};
+  </div>
+);
 
 const Postfach = ({ user, messages, onMarkRead, onReply }) => (
   <div>
@@ -336,7 +334,7 @@ const MessageThread = ({ m, user, unread, onOpen, onReply }) => {
   );
 };
 
-const Admin = ({ user, news, messages, employees, audit, onAddNews, onDelNews, onSend, onResetPin, onLogout }) => {
+const Admin = ({ user, news, tools, messages, employees, audit, onAddNews, onDelNews, onAddTool, onDelTool, onSend, onResetPin, onLogout }) => {
   const [tab, setTab] = useState('news');
   return (
     <div style={{ minHeight: '100vh', background: T.bg, fontFamily: 'system-ui,-apple-system,sans-serif', display: 'flex', flexDirection: 'column' }}>
@@ -349,13 +347,14 @@ const Admin = ({ user, news, messages, employees, audit, onAddNews, onDelNews, o
       } />
       <div style={{ background: T.surface, borderBottom: '1px solid ' + T.lineSoft }}>
         <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 1.5rem', display: 'flex', gap: 28 }}>
-          {[['news', 'News'], ['post', 'Persönl. Bereich'], ['team', 'Mitarbeiter'], ['audit', 'Protokoll']].map(([k, l]) => (
+          {[['news', 'News'], ['tools', 'Tools & Links'], ['post', 'Persönl. Bereich'], ['team', 'Mitarbeiter'], ['audit', 'Protokoll']].map(([k, l]) => (
             <button key={k} onClick={() => setTab(k)} style={{ background: 'none', border: 'none', padding: '14px 0', fontSize: 12, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: 'pointer', color: tab === k ? T.ink : T.faint, borderBottom: tab === k ? '2px solid ' + T.mauve : '2px solid transparent', marginBottom: -1 }}>{l}</button>
           ))}
         </div>
       </div>
       <div style={{ flex: 1, maxWidth: 1100, margin: '0 auto', width: '100%', padding: '1.75rem 1.5rem', boxSizing: 'border-box' }}>
         {tab === 'news' && <AdminNews news={news} onAdd={onAddNews} onDel={onDelNews} />}
+        {tab === 'tools' && <AdminTools tools={tools} onAdd={onAddTool} onDel={onDelTool} />}
         {tab === 'post' && <AdminPost employees={employees} messages={messages} onSend={onSend} />}
         {tab === 'team' && <AdminTeam employees={employees} onResetPin={onResetPin} />}
         {tab === 'audit' && <AdminAudit audit={audit} />}
@@ -443,6 +442,54 @@ const AdminNews = ({ news, onAdd, onDel }) => {
               </div>
             </div>
             <button onClick={() => onDel(n.id)} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '6px 10px', fontSize: 12, color: T.muted, cursor: 'pointer' }}>Löschen</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const AdminTools = ({ tools, onAdd, onDel }) => {
+  const [abbr, setAbbr] = useState(''); const [title, setTitle] = useState('');
+  const [desc, setDesc] = useState(''); const [link, setLink] = useState(''); const [firm, setFirm] = useState('beide');
+  const reset = () => { setAbbr(''); setTitle(''); setDesc(''); setLink(''); setFirm('beide'); };
+  return (
+    <div>
+      <div style={cardS}>
+        <Label>Tool / Link hinzufügen</Label>
+        <p style={{ fontSize: 12, color: T.muted, margin: '-0.4rem 0 1.2rem' }}>Dauerhafte Werkzeuge und Verweise für alle Mitarbeiter.</p>
+        <p style={subLabel}>Für welche Firma? *</p>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+          {Object.entries(FIRMS).map(([k, f]) => (
+            <button key={k} onClick={() => setFirm(k)} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 14px', borderRadius: 8, fontSize: 13, cursor: 'pointer', border: '1px solid ' + (firm === k ? T.ink : T.line), background: firm === k ? T.chip : T.surface, color: firm === k ? T.ink : T.muted }}>
+              <FirmDot firm={k} />{f.label}
+            </button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
+          <input style={{ ...fieldS, marginBottom: 0, maxWidth: 110 }} placeholder="Kürzel" maxLength={3} value={abbr} onChange={e => setAbbr(e.target.value.toUpperCase())} />
+          <input style={{ ...fieldS, marginBottom: 0 }} placeholder="Titel (z. B. Zeiterfassung)" value={title} onChange={e => setTitle(e.target.value)} />
+        </div>
+        <input style={fieldS} placeholder="Kurze Beschreibung" value={desc} onChange={e => setDesc(e.target.value)} />
+        <input style={fieldS} placeholder="Link (https://…)" value={link} onChange={e => setLink(e.target.value)} />
+        <button style={primaryBtn} onClick={() => { if (!title || !link) return alert('Titel und Link nötig'); onAdd({ abbr: abbr || title.slice(0, 2).toUpperCase(), title, desc, link, firm }); reset(); }}>Hinzufügen</button>
+      </div>
+      <div style={cardS}>
+        <Label>Vorhanden ({tools.length})</Label>
+        {tools.length === 0 && <Empty text="Noch keine Tools." />}
+        {tools.map(t => (
+          <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 0', borderBottom: '1px solid ' + T.lineSoft }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 34, height: 34, borderRadius: 8, background: T.chip, color: T.green, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 500 }}>{t.abbr}</div>
+              <div>
+                <p style={{ margin: 0, fontSize: 14, color: T.ink }}>{t.title}</p>
+                <div style={{ margin: '3px 0 0', display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <FirmTag firm={t.firm} />
+                  <span style={{ fontSize: 11, color: T.faint }}>{t.link}</span>
+                </div>
+              </div>
+            </div>
+            <button onClick={() => onDel(t.id)} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '6px 10px', fontSize: 12, color: T.muted, cursor: 'pointer' }}>Löschen</button>
           </div>
         ))}
       </div>
