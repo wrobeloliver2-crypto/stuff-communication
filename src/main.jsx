@@ -121,9 +121,9 @@ const BrandHeader = ({ right }) => (
   <div style={{ background: T.surface, borderBottom: '1px solid ' + T.lineSoft }}>
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0.7rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
-        <img src={logoPhysio} alt="PhysioPro Lübeck" style={{ height: 46 }} />
-        <div style={{ width: 1, height: 34, background: T.line }} />
-        <img src={logoPilates} alt="Pilates Company Lübeck" style={{ height: 30 }} />
+        <img src={logoPhysio} alt="PhysioPro Lübeck" style={{ height: 56 }} />
+        <div style={{ width: 1, height: 38, background: T.line }} />
+        <img src={logoPilates} alt="Pilates Company Lübeck" style={{ height: 56 }} />
       </div>
       {right}
     </div>
