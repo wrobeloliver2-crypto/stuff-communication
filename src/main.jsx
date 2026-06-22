@@ -98,6 +98,7 @@ const App = () => {
   const logout = () => { setUser(null); setPage('login'); };
 
   const addNews = n => { setNews(x => [{ ...n, id: Date.now(), created: new Date().toLocaleString('de-DE') }, ...x]); logA('News erstellt', user.name, n.title + ' (' + FIRMS[n.firm].label + ')'); };
+  const updateNews = (id, n) => { setNews(x => x.map(e => e.id === id ? { ...e, ...n, id, updated: new Date().toLocaleString('de-DE') } : e)); logA('News bearbeitet', user.name, n.title); };
   const delNews = id => { setNews(x => x.filter(n => n.id !== id)); logA('News gelöscht', user.name, '#' + id); };
   const addTool = t => { setTools(x => [...x, { ...t, id: 'tool' + Date.now() }]); logA('Tool/Link erstellt', user.name, t.title); };
   const delTool = id => { setTools(x => x.filter(t => t.id !== id)); logA('Tool/Link gelöscht', user.name, '#' + id); };
@@ -108,7 +109,7 @@ const App = () => {
 
   if (page === 'login') return <Login employees={employees} onPinSetup={pinSetup} onEmployeeLogin={employeeLogin} onAdminLogin={adminLogin} />;
   if (page === 'employee' && user) return <Employee user={user} news={news} tools={tools} messages={messages.filter(m => forMe(m, user))} onMarkRead={markRead} onReply={addReply} onLogout={logout} />;
-  if (page === 'admin' && user?.isAdmin) return <Admin user={user} news={news} tools={tools} messages={messages} employees={employees} audit={audit} onAddNews={addNews} onDelNews={delNews} onAddTool={addTool} onDelTool={delTool} onSend={sendMessage} onResetPin={resetPin} onLogout={logout} />;
+  if (page === 'admin' && user?.isAdmin) return <Admin user={user} news={news} tools={tools} messages={messages} employees={employees} audit={audit} onAddNews={addNews} onUpdateNews={updateNews} onDelNews={delNews} onAddTool={addTool} onDelTool={delTool} onSend={sendMessage} onResetPin={resetPin} onLogout={logout} />;
   return null;
 };
 const forMe = (m, u) => m.toIndividuals.includes(u.id) || m.toGroups.includes(u.role);
@@ -407,7 +408,7 @@ const MessageThread = ({ m, user, unread, onOpen, onReply }) => {
   );
 };
 
-const Admin = ({ user, news, tools, messages, employees, audit, onAddNews, onDelNews, onAddTool, onDelTool, onSend, onResetPin, onLogout }) => {
+const Admin = ({ user, news, tools, messages, employees, audit, onAddNews, onUpdateNews, onDelNews, onAddTool, onDelTool, onSend, onResetPin, onLogout }) => {
   const [tab, setTab] = useState('news');
   return (
     <div style={{ minHeight: '100vh', background: T.bg, fontFamily: 'system-ui,-apple-system,sans-serif', display: 'flex', flexDirection: 'column' }}>
@@ -426,7 +427,7 @@ const Admin = ({ user, news, tools, messages, employees, audit, onAddNews, onDel
         </div>
       </div>
       <div style={{ flex: 1, maxWidth: 1100, margin: '0 auto', width: '100%', padding: '1.75rem 1.5rem', boxSizing: 'border-box' }}>
-        {tab === 'news' && <AdminNews news={news} onAdd={onAddNews} onDel={onDelNews} />}
+        {tab === 'news' && <AdminNews news={news} onAdd={onAddNews} onUpdate={onUpdateNews} onDel={onDelNews} />}
         {tab === 'tools' && <AdminTools tools={tools} onAdd={onAddTool} onDel={onDelTool} />}
         {tab === 'post' && <AdminPost employees={employees} messages={messages} onSend={onSend} />}
         {tab === 'team' && <AdminTeam employees={employees} onResetPin={onResetPin} />}
@@ -441,7 +442,8 @@ const fieldS = { width: '100%', padding: '11px 12px', marginBottom: 12, border: 
 const primaryBtn = { padding: '10px 20px', border: 'none', borderRadius: 8, background: T.mauve, color: '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer' };
 const subLabel = { fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: T.faint, margin: '0.5rem 0 0.6rem' };
 
-const AdminNews = ({ news, onAdd, onDel }) => {
+const AdminNews = ({ news, onAdd, onUpdate, onDel }) => {
+  const [editId, setEditId] = useState(null);
   const [firm, setFirm] = useState('beide');
   const [title, setTitle] = useState(''); const [text, setText] = useState('');
   const [cat, setCat] = useState(CATEGORIES[0]);
@@ -449,12 +451,41 @@ const AdminNews = ({ news, onAdd, onDel }) => {
   const [eventDate, setEventDate] = useState('');
   const [photos, setPhotos] = useState([]);
   const [pendingAttachment, setPendingAttachment] = useState(null);
-  const reset = () => { setFirm('beide'); setTitle(''); setText(''); setCat(CATEGORIES[0]); setLink(''); setLinkLabel(''); setEventDate(''); setPhotos([]); setPendingAttachment(null); };
+
+  const reset = () => { setEditId(null); setFirm('beide'); setTitle(''); setText(''); setCat(CATEGORIES[0]); setLink(''); setLinkLabel(''); setEventDate(''); setPhotos([]); setPendingAttachment(null); };
+
+  const startEdit = (n) => {
+    setEditId(n.id);
+    setFirm(n.firm || 'beide');
+    setTitle(n.title || '');
+    setText(n.text || '');
+    setCat(n.category || CATEGORIES[0]);
+    setLink(n.link || '');
+    setLinkLabel(n.linkLabel || '');
+    setEventDate(n.eventDate || '');
+    setPhotos(n.photos || []);
+    setPendingAttachment(n.attachment || null);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleSubmit = () => {
+    if (!title || !text) return alert('Titel und Text nötig');
+    const payload = { firm, title, text, category: cat, link: link || null, linkLabel: linkLabel || null, eventDate: eventDate || null, photos, attachment: pendingAttachment || null };
+    if (editId) { onUpdate(editId, payload); } else { onAdd(payload); }
+    reset();
+  };
+
   return (
     <div>
       <div style={cardS}>
-        <Label>News erstellen</Label>
-        <p style={{ fontSize: 12, color: T.muted, margin: '-0.4rem 0 1.2rem' }}>Inhalt im Claude-Chat formulieren und hier einfügen.</p>
+        <Label>{editId ? 'News bearbeiten' : 'News erstellen'}</Label>
+        {editId && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: '1rem', padding: '8px 12px', background: '#fdf6ec', border: '1px solid #f0d9b0', borderRadius: 8 }}>
+            <span style={{ fontSize: 13, color: '#7a5c2e' }}>Du bearbeitest eine bestehende News.</span>
+            <button onClick={reset} style={{ marginLeft: 'auto', background: 'none', border: '1px solid #d4b483', borderRadius: 6, padding: '4px 10px', fontSize: 12, color: '#7a5c2e', cursor: 'pointer' }}>Abbrechen</button>
+          </div>
+        )}
+        {!editId && <p style={{ fontSize: 12, color: T.muted, margin: '-0.4rem 0 1.2rem' }}>Inhalt im Claude-Chat formulieren und hier einfügen.</p>}
         <p style={subLabel}>Für welche Firma? *</p>
         <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
           {Object.entries(FIRMS).map(([k, f]) => (
@@ -490,7 +521,7 @@ const AdminNews = ({ news, onAdd, onDel }) => {
           <UploadButton folder="news-anhaenge" accept=".pdf,.docx,.xlsx,.doc,.xls" label="+ Anhang hochladen" onUploaded={f => setPendingAttachment(f)} />
           {pendingAttachment && <FileChip name={pendingAttachment.name} url={pendingAttachment.url} />}
         </div>
-        <button style={primaryBtn} onClick={() => { if (!title || !text) return alert('Titel und Text nötig'); onAdd({ firm, title, text, category: cat, link: link || null, linkLabel: linkLabel || null, eventDate: eventDate || null, photos, attachment: pendingAttachment || null }); reset(); }}>Veröffentlichen</button>
+        <button style={primaryBtn} onClick={handleSubmit}>{editId ? 'Änderungen speichern' : 'Veröffentlichen'}</button>
       </div>
       <div style={cardS}>
         <Label>Veröffentlicht ({news.length})</Label>
@@ -503,11 +534,14 @@ const AdminNews = ({ news, onAdd, onDel }) => {
                 <p style={{ margin: 0, fontSize: 14, color: T.ink }}>{n.title}</p>
                 <div style={{ margin: '3px 0 0', display: 'flex', alignItems: 'center', gap: 10 }}>
                   <FirmTag firm={n.firm} />
-                  <span style={{ fontSize: 11, color: T.faint, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{n.category} · {n.created}</span>
+                  <span style={{ fontSize: 11, color: T.faint, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{n.category} · {n.created}{n.updated ? ' · bearb. ' + n.updated : ''}</span>
                 </div>
               </div>
             </div>
-            <button onClick={() => onDel(n.id)} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '6px 10px', fontSize: 12, color: T.muted, cursor: 'pointer' }}>Löschen</button>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button onClick={() => startEdit(n)} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '6px 10px', fontSize: 12, color: T.muted, cursor: 'pointer' }}>Bearbeiten</button>
+              <button onClick={() => { if (confirm('News löschen?')) onDel(n.id); }} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '6px 10px', fontSize: 12, color: T.muted, cursor: 'pointer' }}>Löschen</button>
+            </div>
           </div>
         ))}
       </div>
