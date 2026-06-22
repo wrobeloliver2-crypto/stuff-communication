@@ -64,7 +64,7 @@ const DEFAULT_NEWS = [
 
 const DEFAULT_TOOLS = [
   { id: 't1', abbr: 'ZE', title: 'Zeiterfassung', desc: 'Arbeitszeiten erfassen und einsehen', link: 'https://physiozeiterfassung.netlify.app', firm: 'physio' },
-  { id: 't2', abbr: 'TA', title: 'Trainer App', desc: 'Kurse und Teilnehmer verwalten', link: '', firm: 'pilates' },
+  { id: 't2', abbr: 'TA', title: 'Trainer App', desc: 'Wird gerade überarbeitet — bald noch einfacher.', link: '', firm: 'pilates', soon: true },
   { id: 't3', abbr: 'FB', title: 'Fahrtenbuch', desc: 'Dienstfahrten dokumentieren', link: 'https://physiofahrtenbuch.netlify.app', firm: 'physio' },
 ];
 
@@ -280,19 +280,27 @@ const ToolsList = ({ tools }) => (
     <p style={{ fontSize: 12, color: T.muted, margin: '-0.4rem 0 1.2rem', lineHeight: 1.6 }}>Nützliche Werkzeuge und Verweise, auf die du dauerhaft zugreifen kannst.</p>
     {tools.length === 0 && <Empty text="Noch keine Tools hinterlegt." />}
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(240px,1fr))', gap: 12 }}>
-      {tools.map(t => (
-        <a key={t.id} href={t.link} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', background: T.surface, border: '0.5px solid ' + T.line, borderRadius: 12, padding: '1.1rem', display: 'flex', flexDirection: 'column', gap: 10, transition: 'border-color 0.15s' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-            <div style={{ width: 38, height: 38, borderRadius: 9, background: T.chip, color: T.green, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 500, flexShrink: 0 }}>{t.abbr}</div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: T.ink }}>{t.title}</p>
-              <FirmTag firm={t.firm} />
+      {tools.map(t => {
+        const inner = (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
+              <div style={{ width: 38, height: 38, borderRadius: 9, background: T.chip, color: t.soon ? T.faint : T.green, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 500, flexShrink: 0 }}>{t.abbr}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: T.ink }}>{t.title}</p>
+                <FirmTag firm={t.firm} />
+              </div>
+              {t.soon
+                ? <span style={{ fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: T.mauve, border: '1px solid ' + T.mauveSoft, borderRadius: 20, padding: '3px 8px' }}>in Arbeit</span>
+                : <span style={{ color: T.faint, fontSize: 14 }}>↗</span>}
             </div>
-            <span style={{ color: T.faint, fontSize: 14 }}>↗</span>
-          </div>
-          <p style={{ margin: 0, fontSize: 12, color: T.muted, lineHeight: 1.5 }}>{t.desc}</p>
-        </a>
-      ))}
+            <p style={{ margin: 0, fontSize: 12, color: T.muted, lineHeight: 1.5 }}>{t.desc}</p>
+          </>
+        );
+        const base = { background: T.surface, border: '0.5px solid ' + T.line, borderRadius: 12, padding: '1.1rem', display: 'flex', flexDirection: 'column', gap: 10 };
+        return t.soon || !t.link
+          ? <div key={t.id} style={{ ...base, opacity: t.soon ? 0.72 : 1, cursor: 'default' }}>{inner}</div>
+          : <a key={t.id} href={t.link} target="_blank" rel="noopener noreferrer" style={{ ...base, textDecoration: 'none' }}>{inner}</a>;
+      })}
     </div>
   </div>
 );
