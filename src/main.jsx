@@ -14,6 +14,10 @@ const ADMIN_CREDENTIALS = [
 const CATEGORIES = ['Ankündigungen', 'Events', 'Info', 'Schichten'];
 
 const EMPLOYEES = [
+  // ADMIN TEAM (auch als Mitarbeiter sichtbar)
+  { id: 'oliver', name: 'Oliver Wrobel', role: 'PhysioPro Staff', company: 'PhysioPro', pin: null, pinSet: false },
+  { id: 'hanna', name: 'Hanna Wrobel', role: 'Pilates Trainer', company: 'Pilates', pin: null, pinSet: false },
+
   // PhysioPro Staff
   { id: 'anna', name: 'Anna Bath', role: 'PhysioPro Staff', company: 'PhysioPro', pin: null, pinSet: false },
   { id: 'julia', name: 'Julia Mielke', role: 'PhysioPro Staff', company: 'PhysioPro', pin: null, pinSet: false },
