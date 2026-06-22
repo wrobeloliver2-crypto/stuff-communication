@@ -46,73 +46,194 @@ const EMPLOYEES = [
   { id: 'natascha', name: 'Natascha Diestel-Babakerd', role: 'Pilates Trainer', company: 'Pilates', pin: null, pinSet: false },
 ];
 
-const load = (k, f) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : f; } catch { return f; } };
-const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+const API = '/.netlify/functions/data';
 
-// --- Upload Helper ---
-const UPLOAD_URL = '/.netlify/functions/upload';
-const uploadFile = async (file, folder = 'uploads') => {
-  const form = new FormData();
-  form.append('file', file);
-  form.append('folder', folder);
-  const res = await fetch(UPLOAD_URL, { method: 'POST', body: form });
+const apiGet = async (collection) => {
+  const res = await fetch(`${API}?collection=${collection}`);
   const data = await res.json();
-  if (!data.ok) throw new Error(data.error || 'Upload fehlgeschlagen');
-  return data;
+  if (!data.ok) throw new Error(data.error);
+  return data.data;
 };
 
-const DEFAULT_NEWS = [
-  {
-    id: 'n_anfragemgmt', firm: 'physio', category: 'Info',
-    title: 'PhysioPro Anfragemanagement — professionell aufgestellt für unser Wachstum',
-    text: 'PhysioPro Lübeck wächst. Wir werden mehr, wir kommen weiter — und genau deshalb stellen wir uns auch dort professionell auf, wo unsere Zukunft beginnt: bei der Gewinnung neuer Patientinnen und Patienten.\n\nMit unserem eigenen Anfragemanagement bündeln wir ab sofort jede eingehende Anfrage an einer zentralen Stelle und führen sie auf einem klaren Weg von „eingegangen" bis „erledigt". Jede Anfrage bekommt ihren festen Platz, eine eindeutige Zuständigkeit und einen nachvollziehbaren Verlauf. Nichts geht verloren, niemand wird vergessen, und jede Anfrage wird so schnell und verbindlich beantwortet, wie es Menschen erwarten dürfen, die sich uns anvertrauen.\n\nDas ist mehr als ein Werkzeug — es ist ein Bekenntnis dazu, wie wir arbeiten wollen: aufmerksam, verlässlich und auf der Höhe der Zeit. Jeder erste Kontakt ist die Chance, einen Menschen langfristig für PhysioPro zu gewinnen. Diese Chance wollen wir nicht dem Zufall überlassen.\n\nSo gestalten wir die Zukunft von PhysioPro Lübeck — Schritt für Schritt, mit einem Team, das wächst, und mit Strukturen, die mit uns mitwachsen.\n\n(Das Anfragemanagement ist ein internes Verwaltungswerkzeug von PhysioPro. Der Zugang liegt bei der Verwaltung und dem Rezeptionsteam.)',
-    photos: [], link: null, linkLabel: null, eventDate: null, attachment: null, created: '22.06.2026, 09:00',
-  },
-];
+const apiSet = async (collection, payload) => {
+  await fetch(API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ collection, action: 'set', payload }),
+  });
+};
 
-const DEFAULT_TOOLS = [
-  { id: 't1', abbr: 'ZE', title: 'Zeiterfassung', desc: 'Arbeitszeiten erfassen und einsehen', link: 'https://physiozeiterfassung.netlify.app', firm: 'physio' },
-  { id: 't2', abbr: 'TA', title: 'Trainer App', desc: 'Wird gerade überarbeitet — bald noch einfacher.', link: '', firm: 'pilates', soon: true },
-  { id: 't3', abbr: 'FB', title: 'Fahrtenbuch', desc: 'Dienstfahrten dokumentieren', link: 'https://physiofahrtenbuch.netlify.app', firm: 'physio' },
-];
+const apiAppend = async (collection, payload) => {
+  await fetch(API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ collection, action: 'append', payload }),
+  });
+};
 
 const App = () => {
   const [page, setPage] = useState('login');
   const [user, setUser] = useState(null);
-  const [employees, setEmployees] = useState(() => load('si_employees', EMPLOYEES));
-  const [news, setNews] = useState(() => load('si_news', DEFAULT_NEWS));
-  const [tools, setTools] = useState(() => load('si_tools', DEFAULT_TOOLS));
-  const [messages, setMessages] = useState(() => load('si_messages', []));
-  const [audit, setAudit] = useState(() => load('si_audit', []));
-  useEffect(() => save('si_employees', employees), [employees]);
-  useEffect(() => save('si_news', news), [news]);
-  useEffect(() => save('si_tools', tools), [tools]);
-  useEffect(() => save('si_messages', messages), [messages]);
-  useEffect(() => save('si_audit', audit), [audit]);
+  const [loading, setLoading] = useState(true);
+  const [employees, setEmployees] = useState(EMPLOYEES);
+  const [news, setNews] = useState([]);
+  const [tools, setTools] = useState(DEFAULT_TOOLS);
+  const [messages, setMessages] = useState([]);
+  const [audit, setAudit] = useState([]);
 
-  const logA = (action, who, detail) => setAudit(a => [{ id: Date.now() + Math.random(), ts: new Date().toLocaleString('de-DE'), action, who, detail }, ...a]);
+  // Initial load from Sheets
+  useEffect(() => {
+    const init = async () => {
+      try {
+        const [n, t, m, e, a] = await Promise.all([
+          apiGet('news'),
+          apiGet('tools'),
+          apiGet('messages'),
+          apiGet('employees'),
+          apiGet('audit'),
+        ]);
+        if (n.length) setNews(n);
+        if (t.length) setTools(t); else setTools(DEFAULT_TOOLS);
+        if (m.length) setMessages(m);
+        if (e.length) setEmployees(e); else setEmployees(EMPLOYEES);
+        if (a.length) setAudit(a);
+      } catch (err) {
+        console.warn('Sheets nicht erreichbar, starte leer:', err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+    init();
+  }, []);
 
-  const pinSetup = (id, pin) => { setEmployees(es => es.map(e => e.id === id ? { ...e, pin, pinSet: true } : e)); const emp = employees.find(e => e.id === id); setUser({ ...emp, pin, pinSet: true }); setPage('employee'); logA('PIN gesetzt', emp.name, 'Erstanmeldung'); };
-  const employeeLogin = (id, pin) => { const emp = employees.find(e => e.id === id); if (emp && emp.pinSet && emp.pin === pin) { setUser(emp); setPage('employee'); logA('Login', emp.name, 'Mitarbeiter'); } else alert('PIN falsch'); };
-  const adminLogin = (email, pw) => { const a = ADMIN_CREDENTIALS.find(x => x.email === email && x.password === pw); if (a) { setUser({ ...a, isAdmin: true }); setPage('admin'); logA('Login', a.name, 'Admin'); } else alert('E-Mail oder Passwort falsch'); };
+  const logA = async (action, who, detail) => {
+    const entry = { id: Date.now() + Math.random(), ts: new Date().toLocaleString('de-DE'), action, who, detail };
+    setAudit(a => [entry, ...a]);
+    await apiAppend('audit', entry);
+  };
+
+  const pinSetup = async (id, pin) => {
+    const updated = employees.map(e => e.id === id ? { ...e, pin, pinSet: true } : e);
+    setEmployees(updated);
+    await apiSet('employees', updated);
+    const emp = updated.find(e => e.id === id);
+    setUser(emp);
+    setPage('employee');
+    await logA('PIN gesetzt', emp.name, 'Erstanmeldung');
+  };
+
+  const employeeLogin = async (id, pin) => {
+    const emp = employees.find(e => e.id === id);
+    if (emp && emp.pinSet && emp.pin === pin) {
+      setUser(emp);
+      setPage('employee');
+      await logA('Login', emp.name, 'Mitarbeiter');
+    } else alert('PIN falsch');
+  };
+
+  const adminLogin = async (email, pw) => {
+    const a = ADMIN_CREDENTIALS.find(x => x.email === email && x.password === pw);
+    if (a) {
+      setUser({ ...a, isAdmin: true });
+      setPage('admin');
+      await logA('Login', a.name, 'Admin');
+    } else alert('E-Mail oder Passwort falsch');
+  };
+
   const logout = () => { setUser(null); setPage('login'); };
 
-  const addNews = n => { setNews(x => [{ ...n, id: Date.now(), created: new Date().toLocaleString('de-DE') }, ...x]); logA('News erstellt', user.name, n.title + ' (' + FIRMS[n.firm].label + ')'); };
-  const updateNews = (id, n) => { setNews(x => x.map(e => e.id === id ? { ...e, ...n, id, updated: new Date().toLocaleString('de-DE') } : e)); logA('News bearbeitet', user.name, n.title); };
-  const delNews = id => { setNews(x => x.filter(n => n.id !== id)); logA('News gelöscht', user.name, '#' + id); };
-  const addTool = t => { setTools(x => [...x, { ...t, id: 'tool' + Date.now() }]); logA('Tool/Link erstellt', user.name, t.title); };
-  const updateTool = (id, t) => { setTools(x => x.map(e => e.id === id ? { ...e, ...t, id } : e)); logA('Tool/Link bearbeitet', user.name, t.title); };
-  const delTool = id => { setTools(x => x.filter(t => t.id !== id)); logA('Tool/Link gelöscht', user.name, '#' + id); };
-  const sendMessage = m => { setMessages(x => [{ ...m, id: Date.now(), created: new Date().toLocaleString('de-DE'), sender: user.name, readBy: [], replies: [] }, ...x]); logA('Nachricht gesendet', user.name, '"' + m.title + '" → ' + [...m.toGroups, ...m.toIndividuals].join(', ')); };
-  const markRead = id => setMessages(x => x.map(m => m.id === id && !m.readBy.some(r => r.id === user.id) ? { ...m, readBy: [...m.readBy, { id: user.id, name: user.name, ts: new Date().toLocaleString('de-DE') }] } : m));
-  const addReply = (id, text, attachment) => { setMessages(x => x.map(m => m.id === id ? { ...m, replies: [...(m.replies || []), { from: user.name, text, attachment, ts: new Date().toLocaleString('de-DE') }] } : m)); logA('Antwort im Bereich', user.name, 'zu #' + id); };
-  const resetPin = id => { setEmployees(es => es.map(e => e.id === id ? { ...e, pin: null, pinSet: false } : e)); logA('PIN zurückgesetzt', user.name, id); };
+  const addNews = async n => {
+    const entry = { ...n, id: Date.now(), created: new Date().toLocaleString('de-DE') };
+    const updated = [entry, ...news];
+    setNews(updated);
+    await apiSet('news', updated);
+    await logA('News erstellt', user.name, n.title + ' (' + FIRMS[n.firm].label + ')');
+  };
+
+  const updateNews = async (id, n) => {
+    const updated = news.map(e => e.id === id ? { ...e, ...n, id, updated: new Date().toLocaleString('de-DE') } : e);
+    setNews(updated);
+    await apiSet('news', updated);
+    await logA('News bearbeitet', user.name, n.title);
+  };
+
+  const delNews = async id => {
+    const updated = news.filter(n => n.id !== id);
+    setNews(updated);
+    await apiSet('news', updated);
+    await logA('News gelöscht', user.name, '#' + id);
+  };
+
+  const addTool = async t => {
+    const entry = { ...t, id: 'tool' + Date.now() };
+    const updated = [...tools, entry];
+    setTools(updated);
+    await apiSet('tools', updated);
+    await logA('Tool/Link erstellt', user.name, t.title);
+  };
+
+  const updateTool = async (id, t) => {
+    const updated = tools.map(e => e.id === id ? { ...e, ...t, id } : e);
+    setTools(updated);
+    await apiSet('tools', updated);
+    await logA('Tool/Link bearbeitet', user.name, t.title);
+  };
+
+  const delTool = async id => {
+    const updated = tools.filter(t => t.id !== id);
+    setTools(updated);
+    await apiSet('tools', updated);
+    await logA('Tool/Link gelöscht', user.name, '#' + id);
+  };
+
+  const sendMessage = async m => {
+    const entry = { ...m, id: Date.now(), created: new Date().toLocaleString('de-DE'), sender: user.name, readBy: [], replies: [] };
+    const updated = [entry, ...messages];
+    setMessages(updated);
+    await apiSet('messages', updated);
+    await logA('Nachricht gesendet', user.name, '"' + m.title + '" → ' + [...m.toGroups, ...m.toIndividuals].join(', '));
+  };
+
+  const markRead = async id => {
+    const updated = messages.map(m => m.id === id && !m.readBy.some(r => r.id === user.id)
+      ? { ...m, readBy: [...m.readBy, { id: user.id, name: user.name, ts: new Date().toLocaleString('de-DE') }] }
+      : m);
+    setMessages(updated);
+    await apiSet('messages', updated);
+  };
+
+  const addReply = async (id, text, attachment) => {
+    const reply = { from: user.name, text, attachment, ts: new Date().toLocaleString('de-DE') };
+    const updated = messages.map(m => m.id === id ? { ...m, replies: [...(m.replies || []), reply] } : m);
+    setMessages(updated);
+    await apiSet('messages', updated);
+    await logA('Antwort', user.name, 'zu #' + id);
+  };
+
+  const resetPin = async id => {
+    const updated = employees.map(e => e.id === id ? { ...e, pin: null, pinSet: false } : e);
+    setEmployees(updated);
+    await apiSet('employees', updated);
+    await logA('PIN zurückgesetzt', user.name, id);
+  };
+
+  if (loading) return (
+    <div style={{ minHeight: '100vh', background: '#faf8f4', display: 'flex', flexDirection: 'column', fontFamily: 'system-ui,-apple-system,sans-serif' }}>
+      <BrandHeader right={<span style={{ fontSize: 11, color: '#a39e92', letterSpacing: '0.14em' }}>INTRANET</span>} />
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 16 }}>
+        <div style={{ width: 32, height: 32, border: '2px solid #e6e1d6', borderTopColor: '#55725f', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+        <p style={{ fontSize: 13, color: '#a39e92', margin: 0 }}>Daten werden geladen …</p>
+      </div>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
 
   if (page === 'login') return <Login employees={employees} onPinSetup={pinSetup} onEmployeeLogin={employeeLogin} onAdminLogin={adminLogin} />;
   if (page === 'employee' && user) return <Employee user={user} news={news} tools={tools} messages={messages.filter(m => forMe(m, user))} onMarkRead={markRead} onReply={addReply} onLogout={logout} />;
   if (page === 'admin' && user?.isAdmin) return <Admin user={user} news={news} tools={tools} messages={messages} employees={employees} audit={audit} onAddNews={addNews} onUpdateNews={updateNews} onDelNews={delNews} onAddTool={addTool} onUpdateTool={updateTool} onDelTool={delTool} onSend={sendMessage} onResetPin={resetPin} onLogout={logout} />;
   return null;
 };
+
 const forMe = (m, u) => m.toIndividuals.includes(u.id) || m.toGroups.includes(u.role);
 
 const FirmDot = ({ firm }) => {
