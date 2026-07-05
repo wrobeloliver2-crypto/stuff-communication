@@ -200,10 +200,12 @@ const App = () => {
   };
 
   const pinSetup = async (id, pin) => {
-    const updated = employees.map(e => e.id === id ? { ...e, pin, pinSet: true } : e);
-    setEmployees(updated);
-    await apiSet('employees', updated);
-    const emp = updated.find(e => e.id === id);
+    let emp;
+    await commit(setEmployees, 'employees', prev => {
+      const next = prev.map(e => e.id === id ? { ...e, pin, pinSet: true } : e);
+      emp = next.find(e => e.id === id);
+      return next;
+    });
     setUser(emp);
     setPage('employee');
     await logA('PIN gesetzt', emp.name, 'Erstanmeldung');
@@ -229,92 +231,78 @@ const App = () => {
 
   const logout = () => { setUser(null); setPage('login'); };
 
+  // Schreibt eine Collection immer auf Basis des AKTUELLSTEN States (funktionale
+  // Form), nie auf Basis einer veralteten Closure-Kopie. Das verhindert, dass
+  // eine schnelle Folge von Änderungen (oder ein dazwischenfunkender Sync) einen
+  // alten Stand ins Sheet zurückschreibt.
+  const commit = (setter, collection, transform) => {
+    let next;
+    setter(prev => { next = transform(prev); return next; });
+    return apiSet(collection, next);
+  };
+
   const addNews = async n => {
     const entry = { ...n, id: Date.now(), created: new Date().toLocaleString('de-DE') };
-    const updated = [entry, ...news];
-    setNews(updated);
-    await apiSet('news', updated);
+    await commit(setNews, 'news', prev => [entry, ...prev]);
     await logA('News erstellt', user.name, n.title + ' (' + FIRMS[n.firm].label + ')');
   };
 
   const updateNews = async (id, n) => {
-    const updated = news.map(e => e.id === id ? { ...e, ...n, id, updated: new Date().toLocaleString('de-DE') } : e);
-    setNews(updated);
-    await apiSet('news', updated);
+    await commit(setNews, 'news', prev => prev.map(e => e.id === id ? { ...e, ...n, id, updated: new Date().toLocaleString('de-DE') } : e));
     await logA('News bearbeitet', user.name, n.title);
   };
 
   const delNews = async id => {
-    const updated = news.filter(n => n.id !== id);
-    setNews(updated);
-    await apiSet('news', updated);
+    await commit(setNews, 'news', prev => prev.filter(n => n.id !== id));
     await logA('News gelöscht', user.name, '#' + id);
   };
 
   const addTool = async t => {
     const entry = { ...t, id: 'tool' + Date.now() };
-    const updated = [...tools, entry];
-    setTools(updated);
-    await apiSet('tools', updated);
+    await commit(setTools, 'tools', prev => [...prev, entry]);
     await logA('Tool/Link erstellt', user.name, t.title);
   };
 
   const updateTool = async (id, t) => {
-    const updated = tools.map(e => e.id === id ? { ...e, ...t, id } : e);
-    setTools(updated);
-    await apiSet('tools', updated);
+    await commit(setTools, 'tools', prev => prev.map(e => e.id === id ? { ...e, ...t, id } : e));
     await logA('Tool/Link bearbeitet', user.name, t.title);
   };
 
   const delTool = async id => {
-    const updated = tools.filter(t => t.id !== id);
-    setTools(updated);
-    await apiSet('tools', updated);
+    await commit(setTools, 'tools', prev => prev.filter(t => t.id !== id));
     await logA('Tool/Link gelöscht', user.name, '#' + id);
   };
 
   const sendMessage = async m => {
     const entry = { ...m, id: Date.now(), created: new Date().toLocaleString('de-DE'), sender: user.name, readBy: [], replies: [], closed: false };
-    const updated = [entry, ...messages];
-    setMessages(updated);
-    await apiSet('messages', updated);
+    await commit(setMessages, 'messages', prev => [entry, ...prev]);
     await logA('Nachricht gesendet', user.name, '"' + m.title + '" → ' + [...m.toGroups, ...m.toIndividuals].join(', '));
   };
 
   const markRead = async id => {
-    const updated = messages.map(m => m.id === id && !m.readBy.some(r => r.id === user.id)
+    await commit(setMessages, 'messages', prev => prev.map(m => m.id === id && !m.readBy.some(r => r.id === user.id)
       ? { ...m, readBy: [...m.readBy, { id: user.id, name: user.name, ts: new Date().toLocaleString('de-DE') }] }
-      : m);
-    setMessages(updated);
-    await apiSet('messages', updated);
+      : m));
   };
 
   const addReply = async (id, text, attachments) => {
     const reply = { from: user.name, text, attachments: attachments || [], ts: new Date().toLocaleString('de-DE') };
-    const updated = messages.map(m => m.id === id ? { ...m, replies: [...(m.replies || []), reply] } : m);
-    setMessages(updated);
-    await apiSet('messages', updated);
+    await commit(setMessages, 'messages', prev => prev.map(m => m.id === id ? { ...m, replies: [...(m.replies || []), reply] } : m));
     await logA('Antwort', user.name, 'zu #' + id);
   };
 
   const closeDialog = async id => {
-    const updated = messages.map(m => m.id === id ? { ...m, closed: true } : m);
-    setMessages(updated);
-    await apiSet('messages', updated);
+    await commit(setMessages, 'messages', prev => prev.map(m => m.id === id ? { ...m, closed: true } : m));
     await logA('Dialog beendet', user.name, '#' + id);
   };
 
   const reopenDialog = async id => {
-    const updated = messages.map(m => m.id === id ? { ...m, closed: false } : m);
-    setMessages(updated);
-    await apiSet('messages', updated);
+    await commit(setMessages, 'messages', prev => prev.map(m => m.id === id ? { ...m, closed: false } : m));
     await logA('Dialog wieder geöffnet', user.name, '#' + id);
   };
 
   const resetPin = async id => {
-    const updated = employees.map(e => e.id === id ? { ...e, pin: null, pinSet: false } : e);
-    setEmployees(updated);
-    await apiSet('employees', updated);
+    await commit(setEmployees, 'employees', prev => prev.map(e => e.id === id ? { ...e, pin: null, pinSet: false } : e));
     await logA('PIN zurückgesetzt', user.name, id);
   };
 
