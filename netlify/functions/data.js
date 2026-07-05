@@ -50,7 +50,30 @@ exports.handler = async (event) => {
       if (!collection || !action) return { statusCode: 400, headers: HEADERS, body: JSON.stringify({ error: 'collection/action fehlt' }) };
 
       if (action === 'set') {
-        const incoming = Array.isArray(payload) ? payload : [];
+        // SCHUTZ 0 (Payload-Validierung): Ein fehlender oder ungültiger
+        // Payload wird HART abgelehnt statt (wie früher) stillschweigend als
+        // leeres Array interpretiert. Hintergrund: Der Client-Bug, der die
+        // Collections leerte, sendete gar kein "[]", sondern payload:
+        // undefined — JSON.stringify lässt undefined-Felder komplett weg,
+        // und die alte Koerzierung (Array.isArray ? payload : []) machte
+        // daraus ein legitim aussehendes Leeren der gesamten Collection.
+        // Mit dieser Prüfung wird JEDER künftige Client-Fehler dieser Art
+        // zu einem lauten, harmlosen 400 — die Daten bleiben unberührt.
+        // Wirkt serverseitig und damit unabhängig davon, welchen (ggf.
+        // gecachten) JS-Bundle-Stand ein Gerät gerade ausführt.
+        if (!Array.isArray(payload)) {
+          return {
+            statusCode: 400,
+            headers: HEADERS,
+            body: JSON.stringify({
+              ok: false,
+              error: 'invalid_payload',
+              collection,
+              message: 'Schreibvorgang abgelehnt: Payload fehlt oder ist kein Array. Die Daten wurden nicht verändert. (Hinweis: veralteter App-Stand im Browser — bitte Seite hart neu laden.)'
+            })
+          };
+        }
+        const incoming = payload;
 
         // SCHUTZ 1 (Versions-Check): Erkennt JEDE Art von "jemand anderes hat
         // die Collection inzwischen verändert" — nicht nur den Spezialfall
