@@ -48,9 +48,40 @@ const EMPLOYEES = [
 ];
 
 const UPLOAD_URL = '/.netlify/functions/upload';
+
+// Bilder werden vor dem Upload automatisch verkleinert/komprimiert, damit
+// Handy-Fotos nicht an der 10-MB-Grenze scheitern — ganz ohne Zusatzschritt.
+const MAX_IMAGE_DIMENSION = 1920;
+const IMAGE_QUALITY = 0.85;
+
+const resizeImageIfNeeded = (file) => new Promise((resolve) => {
+  if (!file.type.startsWith('image/') || file.type === 'image/gif') { resolve(file); return; }
+  const img = new Image();
+  const url = URL.createObjectURL(file);
+  img.onload = () => {
+    URL.revokeObjectURL(url);
+    let { width, height } = img;
+    if (width <= MAX_IMAGE_DIMENSION && height <= MAX_IMAGE_DIMENSION) { resolve(file); return; }
+    const scale = MAX_IMAGE_DIMENSION / Math.max(width, height);
+    width = Math.round(width * scale);
+    height = Math.round(height * scale);
+    const canvas = document.createElement('canvas');
+    canvas.width = width; canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, width, height);
+    canvas.toBlob(blob => {
+      if (!blob || blob.size >= file.size) { resolve(file); return; }
+      resolve(new File([blob], file.name, { type: file.type }));
+    }, file.type, IMAGE_QUALITY);
+  };
+  img.onerror = () => resolve(file);
+  img.src = url;
+});
+
 const uploadFile = async (file, folder = 'uploads') => {
+  const toSend = await resizeImageIfNeeded(file);
   const form = new FormData();
-  form.append('file', file);
+  form.append('file', toSend);
   form.append('folder', folder);
   const res = await fetch(UPLOAD_URL, { method: 'POST', body: form });
   const data = await res.json();
