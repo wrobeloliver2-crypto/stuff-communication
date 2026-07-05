@@ -245,7 +245,7 @@ const App = () => {
   };
 
   const sendMessage = async m => {
-    const entry = { ...m, id: Date.now(), created: new Date().toLocaleString('de-DE'), sender: user.name, readBy: [], replies: [] };
+    const entry = { ...m, id: Date.now(), created: new Date().toLocaleString('de-DE'), sender: user.name, readBy: [], replies: [], closed: false };
     const updated = [entry, ...messages];
     setMessages(updated);
     await apiSet('messages', updated);
@@ -268,6 +268,20 @@ const App = () => {
     await logA('Antwort', user.name, 'zu #' + id);
   };
 
+  const closeDialog = async id => {
+    const updated = messages.map(m => m.id === id ? { ...m, closed: true } : m);
+    setMessages(updated);
+    await apiSet('messages', updated);
+    await logA('Dialog beendet', user.name, '#' + id);
+  };
+
+  const reopenDialog = async id => {
+    const updated = messages.map(m => m.id === id ? { ...m, closed: false } : m);
+    setMessages(updated);
+    await apiSet('messages', updated);
+    await logA('Dialog wieder geöffnet', user.name, '#' + id);
+  };
+
   const resetPin = async id => {
     const updated = employees.map(e => e.id === id ? { ...e, pin: null, pinSet: false } : e);
     setEmployees(updated);
@@ -288,7 +302,7 @@ const App = () => {
 
   if (page === 'login') return <Login employees={employees} onPinSetup={pinSetup} onEmployeeLogin={employeeLogin} onAdminLogin={adminLogin} />;
   if (page === 'employee' && user) return <Employee user={user} news={news} tools={tools} messages={messages.filter(m => forMe(m, user))} onMarkRead={markRead} onReply={addReply} onLogout={logout} />;
-  if (page === 'admin' && user?.isAdmin) return <Admin user={user} news={news} tools={tools} messages={messages} employees={employees} audit={audit} onAddNews={addNews} onUpdateNews={updateNews} onDelNews={delNews} onAddTool={addTool} onUpdateTool={updateTool} onDelTool={delTool} onSend={sendMessage} onResetPin={resetPin} onLogout={logout} />;
+  if (page === 'admin' && user?.isAdmin) return <Admin user={user} news={news} tools={tools} messages={messages} employees={employees} audit={audit} onAddNews={addNews} onUpdateNews={updateNews} onDelNews={delNews} onAddTool={addTool} onUpdateTool={updateTool} onDelTool={delTool} onSend={sendMessage} onReply={addReply} onCloseDialog={closeDialog} onReopenDialog={reopenDialog} onResetPin={resetPin} onLogout={logout} />;
   return null;
 };
 
@@ -557,7 +571,7 @@ const MessageThread = ({ m, user, unread, onOpen, onReply }) => {
       <div onClick={() => setOpen(o => { if (!o) onOpen(); return !o; })} style={{ padding: '13px 15px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 13 }}>
         <Marker letter={m.sender.split(' ').map(w => w[0]).join('').slice(0, 2)} tone="solid" />
         <div style={{ flex: 1 }}>
-          <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: T.ink }}>{m.title}</p>
+          <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: T.ink }}>{m.title}{m.closed ? <span style={{ fontSize: 10, color: T.faint, fontWeight: 400, marginLeft: 8, letterSpacing: '0.04em', textTransform: 'uppercase' }}>· beendet</span> : null}</p>
           <p style={{ margin: '2px 0 0', fontSize: 11, color: T.faint, letterSpacing: '0.04em', textTransform: 'uppercase' }}>von {m.sender} · {m.created}{unread ? ' · neu' : ''}</p>
         </div>
         {unread ? <span style={{ width: 7, height: 7, borderRadius: '50%', background: T.mauveSoft }} /> : <span style={{ color: '#c4bfb2', fontSize: 12 }}>{open ? '▴' : '▾'}</span>}
@@ -578,20 +592,26 @@ const MessageThread = ({ m, user, unread, onOpen, onReply }) => {
             </div>
           )}
           <div style={{ marginTop: 14, borderTop: '1px solid ' + T.lineSoft, paddingTop: 12 }}>
-            <textarea value={reply} onChange={e => setReply(e.target.value)} placeholder="Antwort schreiben …" style={{ width: '100%', minHeight: 60, padding: 10, border: '1px solid ' + T.line, borderRadius: 8, fontSize: 13, boxSizing: 'border-box', fontFamily: 'inherit', color: T.ink, background: T.bg }} />
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
-              {pendingFiles.length < MAX_ATTACHMENTS && (
-                <UploadButton folder="antworten" label="+ Datei anhängen" onUploaded={f => setPendingFiles(fs => [...fs, f])} />
-              )}
-              {pendingFiles.map((f, i) => (
-                <span key={i} style={{ display: 'inline-flex', alignItems: 'center' }}>
-                  <FileChip name={f.name} url={f.url} />
-                  <button onClick={() => setPendingFiles(fs => fs.filter((_, j) => j !== i))} style={{ border: 'none', background: 'none', color: T.faint, cursor: 'pointer', fontSize: 13, marginLeft: -4, marginTop: 8 }} title="Entfernen">×</button>
-                </span>
-              ))}
-              <button onClick={() => { if (!reply.trim()) return; onReply(m.id, reply, pendingFiles); setReply(''); setPendingFiles([]); }} style={{ padding: '8px 16px', border: 'none', borderRadius: 8, background: T.mauve, color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Senden</button>
-            </div>
-            {pendingFiles.length >= MAX_ATTACHMENTS && <p style={{ fontSize: 11, color: T.faint, margin: '4px 0 0' }}>Maximal {MAX_ATTACHMENTS} Dateien pro Antwort.</p>}
+            {m.closed ? (
+              <p style={{ margin: 0, fontSize: 12, color: T.faint, fontStyle: 'italic' }}>Dieser Dialog wurde von der Verwaltung beendet.</p>
+            ) : (
+              <>
+                <textarea value={reply} onChange={e => setReply(e.target.value)} placeholder="Antwort schreiben …" style={{ width: '100%', minHeight: 60, padding: 10, border: '1px solid ' + T.line, borderRadius: 8, fontSize: 13, boxSizing: 'border-box', fontFamily: 'inherit', color: T.ink, background: T.bg }} />
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
+                  {pendingFiles.length < MAX_ATTACHMENTS && (
+                    <UploadButton folder="antworten" label="+ Datei anhängen" onUploaded={f => setPendingFiles(fs => [...fs, f])} />
+                  )}
+                  {pendingFiles.map((f, i) => (
+                    <span key={i} style={{ display: 'inline-flex', alignItems: 'center' }}>
+                      <FileChip name={f.name} url={f.url} />
+                      <button onClick={() => setPendingFiles(fs => fs.filter((_, j) => j !== i))} style={{ border: 'none', background: 'none', color: T.faint, cursor: 'pointer', fontSize: 13, marginLeft: -4, marginTop: 8 }} title="Entfernen">×</button>
+                    </span>
+                  ))}
+                  <button onClick={() => { if (!reply.trim()) return; onReply(m.id, reply, pendingFiles); setReply(''); setPendingFiles([]); }} style={{ padding: '8px 16px', border: 'none', borderRadius: 8, background: T.mauve, color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Senden</button>
+                </div>
+                {pendingFiles.length >= MAX_ATTACHMENTS && <p style={{ fontSize: 11, color: T.faint, margin: '4px 0 0' }}>Maximal {MAX_ATTACHMENTS} Dateien pro Antwort.</p>}
+              </>
+            )}
           </div>
         </div>
       )}
@@ -599,7 +619,7 @@ const MessageThread = ({ m, user, unread, onOpen, onReply }) => {
   );
 };
 
-const Admin = ({ user, news, tools, messages, employees, audit, onAddNews, onUpdateNews, onDelNews, onAddTool, onUpdateTool, onDelTool, onSend, onResetPin, onLogout }) => {
+const Admin = ({ user, news, tools, messages, employees, audit, onAddNews, onUpdateNews, onDelNews, onAddTool, onUpdateTool, onDelTool, onSend, onReply, onCloseDialog, onReopenDialog, onResetPin, onLogout }) => {
   const [tab, setTab] = useState('news');
   return (
     <div style={{ minHeight: '100vh', background: T.bg, fontFamily: 'system-ui,-apple-system,sans-serif', display: 'flex', flexDirection: 'column' }}>
@@ -620,7 +640,7 @@ const Admin = ({ user, news, tools, messages, employees, audit, onAddNews, onUpd
       <div style={{ flex: 1, maxWidth: 1100, margin: '0 auto', width: '100%', padding: '1.75rem 1.5rem', boxSizing: 'border-box' }}>
         {tab === 'news' && <AdminNews news={news} onAdd={onAddNews} onUpdate={onUpdateNews} onDel={onDelNews} />}
         {tab === 'tools' && <AdminTools tools={tools} onAdd={onAddTool} onUpdate={onUpdateTool} onDel={onDelTool} />}
-        {tab === 'post' && <AdminPost employees={employees} messages={messages} onSend={onSend} />}
+        {tab === 'post' && <AdminPost employees={employees} messages={messages} onSend={onSend} onReply={onReply} onCloseDialog={onCloseDialog} onReopenDialog={onReopenDialog} />}
         {tab === 'team' && <AdminTeam employees={employees} onResetPin={onResetPin} />}
         {tab === 'audit' && <AdminAudit audit={audit} />}
       </div>
@@ -824,7 +844,7 @@ const AdminTools = ({ tools, onAdd, onUpdate, onDel }) => {
   );
 };
 
-const AdminPost = ({ employees, messages, onSend }) => {
+const AdminPost = ({ employees, messages, onSend, onReply, onCloseDialog, onReopenDialog }) => {
   const [title, setTitle] = useState(''); const [text, setText] = useState('');
   const [groups, setGroups] = useState([]); const [inds, setInds] = useState([]);
   const [pendingAttachments, setPendingAttachments] = useState([]);
@@ -861,17 +881,70 @@ const AdminPost = ({ employees, messages, onSend }) => {
       <div style={cardS}>
         <Label>Gesendet ({messages.length})</Label>
         {messages.length === 0 && <Empty text="Noch keine Nachrichten gesendet." />}
-        {messages.map(m => (
-          <div key={m.id} style={{ padding: '11px 0', borderBottom: '1px solid ' + T.lineSoft }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <p style={{ margin: 0, fontSize: 14, color: T.ink }}>{m.title}</p>
-              <span style={{ fontSize: 11, color: T.faint }}>{m.readBy.length} gelesen{m.replies?.length ? ' · ' + m.replies.length + ' Antworten' : ''}</span>
-            </div>
-            <p style={{ margin: '3px 0 0', fontSize: 11, color: T.faint, letterSpacing: '0.04em', textTransform: 'uppercase' }}>an {[...m.toGroups, ...m.toIndividuals.map(id => employees.find(e => e.id === id)?.name)].join(', ')} · {m.created}</p>
-            {m.readBy.length > 0 && <p style={{ margin: '4px 0 0', fontSize: 11, color: T.greenSoft }}>gelesen von: {m.readBy.map(r => r.name).join(', ')}</p>}
-          </div>
-        ))}
+        {messages.map(m => <AdminMessageThread key={m.id} m={m} employees={employees} onReply={onReply} onCloseDialog={onCloseDialog} onReopenDialog={onReopenDialog} />)}
       </div>
+    </div>
+  );
+};
+
+const AdminMessageThread = ({ m, employees, onReply, onCloseDialog, onReopenDialog }) => {
+  const [open, setOpen] = useState(false);
+  const [reply, setReply] = useState('');
+  const [pendingFiles, setPendingFiles] = useState([]);
+  const recipientNames = [...m.toGroups, ...m.toIndividuals.map(id => employees.find(e => e.id === id)?.name)].filter(Boolean).join(', ');
+  return (
+    <div style={{ borderBottom: '1px solid ' + T.lineSoft }}>
+      <div onClick={() => setOpen(o => !o)} style={{ padding: '11px 0', cursor: 'pointer' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+          <p style={{ margin: 0, fontSize: 14, color: T.ink }}>{m.title}{m.closed ? <span style={{ fontSize: 10, color: T.faint, fontWeight: 400, marginLeft: 8, letterSpacing: '0.04em', textTransform: 'uppercase' }}>· beendet</span> : null}</p>
+          <span style={{ fontSize: 11, color: T.faint, whiteSpace: 'nowrap' }}>{m.readBy.length} gelesen{m.replies?.length ? ' · ' + m.replies.length + ' Antworten' : ''} {open ? '▴' : '▾'}</span>
+        </div>
+        <p style={{ margin: '3px 0 0', fontSize: 11, color: T.faint, letterSpacing: '0.04em', textTransform: 'uppercase' }}>an {recipientNames} · {m.created}</p>
+        {m.readBy.length > 0 && <p style={{ margin: '4px 0 0', fontSize: 11, color: T.greenSoft }}>gelesen von: {m.readBy.map(r => r.name).join(', ')}</p>}
+      </div>
+      {open && (
+        <div style={{ padding: '4px 0 16px', fontSize: 13, lineHeight: 1.65, color: T.muted }}>
+          <p style={{ margin: '0 0 8px' }}>{m.text}</p>
+          {attachmentsOf(m).map((a, i) => <FileChip key={i} name={a.name || a} url={a.url || null} />)}
+          {m.replies && m.replies.length > 0 && (
+            <div style={{ marginTop: 10, borderTop: '1px solid ' + T.lineSoft, paddingTop: 10 }}>
+              {m.replies.map((r, i) => (
+                <div key={i} style={{ marginBottom: 10 }}>
+                  <p style={{ margin: 0, fontSize: 11, color: T.faint, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{r.from} · {r.ts}</p>
+                  <p style={{ margin: '3px 0 0' }}>{r.text}</p>
+                  {attachmentsOf(r).map((a, i2) => <FileChip key={i2} name={a.name || a} url={a.url || null} />)}
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ marginTop: 12, borderTop: '1px solid ' + T.lineSoft, paddingTop: 12 }}>
+            {m.closed ? (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                <p style={{ margin: 0, fontSize: 12, color: T.faint, fontStyle: 'italic' }}>Dieser Dialog wurde beendet.</p>
+                <button onClick={() => onReopenDialog(m.id)} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '6px 12px', fontSize: 12, color: T.muted, cursor: 'pointer' }}>Dialog wieder öffnen</button>
+              </div>
+            ) : (
+              <>
+                <textarea value={reply} onChange={e => setReply(e.target.value)} placeholder="Antwort schreiben …" style={{ width: '100%', minHeight: 60, padding: 10, border: '1px solid ' + T.line, borderRadius: 8, fontSize: 13, boxSizing: 'border-box', fontFamily: 'inherit', color: T.ink, background: T.bg }} />
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
+                  {pendingFiles.length < MAX_ATTACHMENTS && (
+                    <UploadButton folder="antworten" label="+ Datei anhängen" onUploaded={f => setPendingFiles(fs => [...fs, f])} />
+                  )}
+                  {pendingFiles.map((f, i) => (
+                    <span key={i} style={{ display: 'inline-flex', alignItems: 'center' }}>
+                      <FileChip name={f.name} url={f.url} />
+                      <button onClick={() => setPendingFiles(fs => fs.filter((_, j) => j !== i))} style={{ border: 'none', background: 'none', color: T.faint, cursor: 'pointer', fontSize: 13, marginLeft: -4, marginTop: 8 }} title="Entfernen">×</button>
+                    </span>
+                  ))}
+                  <button onClick={() => { if (!reply.trim()) return; onReply(m.id, reply, pendingFiles); setReply(''); setPendingFiles([]); }} style={{ padding: '8px 16px', border: 'none', borderRadius: 8, background: T.mauve, color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Senden</button>
+                </div>
+                {pendingFiles.length >= MAX_ATTACHMENTS && <p style={{ fontSize: 11, color: T.faint, margin: '4px 0 0' }}>Maximal {MAX_ATTACHMENTS} Dateien pro Antwort.</p>}
+                <button onClick={() => { if (confirm('Diesen Dialog beenden? Die Person kann danach nicht mehr antworten.')) onCloseDialog(m.id); }} style={{ marginTop: 10, background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '6px 12px', fontSize: 12, color: T.muted, cursor: 'pointer' }}>Dialog beenden</button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
