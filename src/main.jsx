@@ -227,6 +227,20 @@ const App = () => {
   // zu genau der Art von veraltetem Lesen führen, die dieser Mechanismus
   // eigentlich verhindern soll.
   const versionsRef = useRef({});
+  // Synchrone Quelle der Wahrheit für alle Collections. Grund (KERNURSACHE
+  // des "leerer Payload"-Bugs): commit() hat bisher den aktuellen Stand als
+  // Nebeneffekt AUS dem setState-Updater gelesen — React führt Updater aber
+  // nur dann synchron aus, wenn auf der Komponente kein anderes Update
+  // aussteht ("eager state"-Optimierung). Stand bereits ein Update an (z. B.
+  // ein setNews aus loadAll direkt davor, oder ein gerade eingetroffener
+  // Poll), lief der Updater erst später im Render — "next" war zum Zeitpunkt
+  // des Requests noch undefined, JSON.stringify ließ das payload-Feld ganz
+  // weg, und der Server interpretierte das als leeres Array. Folge: Leer-
+  // Guard-409 beim Löschen bzw. (vor Einführung des Guards) komplett
+  // geleerte Collections im Sheet. Dieses Ref wird bei jedem Laden und jedem
+  // Schreiben synchron mitgeführt — commit() liest NUR noch hieraus, nie
+  // mehr aus einem Updater-Nebeneffekt.
+  const dataRef = useRef({ news: [], tools: DEFAULT_TOOLS, messages: [], employees: EMPLOYEES, audit: [] });
   // Verhindert, dass der Versuch, eine gespeicherte Mitarbeiter-Session
   // wiederherzustellen, bei JEDEM periodischen 20-Sekunden-Reload erneut
   // läuft (der useEffect unten hat ein leeres Dependency-Array, "user" wäre
@@ -275,23 +289,25 @@ const backfillMissingIds = (items) => {
 
         if (n.length) {
           const { items: fixedNews, fixedCount } = backfillMissingIds(n);
+          dataRef.current.news = fixedNews;
           setNews(fixedNews);
           if (fixedCount > 0) {
             console.warn('news: ' + fixedCount + ' Einträge ohne id gefunden, wird korrigiert und gespeichert.');
             commit(setNews, 'news', () => fixedNews, true);
           }
-        }
+        } else dataRef.current.news = [];
         if (t.length) {
           const { items: fixedTools, fixedCount } = backfillMissingIds(t);
+          dataRef.current.tools = fixedTools;
           setTools(fixedTools);
           if (fixedCount > 0) {
             console.warn('tools: ' + fixedCount + ' Einträge ohne id gefunden, wird korrigiert und gespeichert.');
             commit(setTools, 'tools', () => fixedTools, true);
           }
-        } else setTools(DEFAULT_TOOLS);
-        if (m.length) setMessages(m);
-        if (e.length) setEmployees(e); else setEmployees(EMPLOYEES);
-        if (a.length) setAudit(a);
+        } else { dataRef.current.tools = DEFAULT_TOOLS; setTools(DEFAULT_TOOLS); }
+        if (m.length) { dataRef.current.messages = m; setMessages(m); }
+        if (e.length) { dataRef.current.employees = e; setEmployees(e); } else { dataRef.current.employees = EMPLOYEES; setEmployees(EMPLOYEES); }
+        if (a.length) { dataRef.current.audit = a; setAudit(a); }
 
         // Gespeicherte Mitarbeiter-Session wiederherstellen — nur beim
         // allerersten Laden, per ref abgesichert (siehe Kommentar oben bei
@@ -392,14 +408,29 @@ const backfillMissingIds = (items) => {
       console.warn('Schreibvorgang blockiert: Daten noch nicht geladen (' + collection + ')');
       return;
     }
-    let prevSnapshot, next;
-    setter(prev => { prevSnapshot = prev; next = transform(prev); return next; });
-    if ((!next || next.length === 0) && prevSnapshot && prevSnapshot.length > 1) {
-      console.warn('Schreibvorgang blockiert: würde ' + collection + ' komplett leeren (' + prevSnapshot.length + ' Einträge)');
-      setter(prevSnapshot); // lokalen State zurücksetzen
+    // KERNURSACHEN-FIX: Der Stand wird SYNCHRON aus dataRef gelesen, nicht
+    // mehr als Nebeneffekt aus dem setState-Updater. React garantiert
+    // nämlich NICHT, dass ein Updater synchron läuft: Steht auf der
+    // Komponente bereits ein anderes Update an (z. B. ein setNews aus
+    // loadAll oder ein gerade eingetroffener Poll), führt React den Updater
+    // erst später im Render aus — prevSnapshot/next waren dann beim Bauen
+    // des Requests noch undefined, JSON.stringify ließ "payload" weg, und
+    // der Server sah ein leeres Array. Das war die tatsächliche Ursache
+    // sowohl der 409-Fehler beim Löschen als auch der komplett geleerten
+    // Collections (der stille Backfill-commit direkt nach setNews traf
+    // diesen Pfad bei JEDEM Laden deterministisch).
+    const prevSnapshot = dataRef.current[collection];
+    const next = transform(prevSnapshot);
+    if (!Array.isArray(next)) {
+      console.error('Schreibvorgang blockiert: transform lieferte kein Array (' + collection + ')');
       return;
     }
-    // Die lokale Anzeige wurde oben bereits optimistisch aktualisiert (next).
+    if (next.length === 0 && prevSnapshot.length > 1) {
+      console.warn('Schreibvorgang blockiert: würde ' + collection + ' komplett leeren (' + prevSnapshot.length + ' Einträge)');
+      return;
+    }
+    dataRef.current[collection] = next;
+    setter(next); // Anzeige optimistisch aktualisieren
     // Jetzt prüfen, ob der Server den Schreibvorgang wirklich angenommen hat.
     // Falls nicht (z. B. 409 durch Versions-Konflikt oder den Leer-Guard,
     // Netzwerkfehler o. ä.), wird der lokale Stand zurückgerollt und der
@@ -408,6 +439,7 @@ const backfillMissingIds = (items) => {
     const expectedVersion = versionsRef.current[collection];
     const result = await apiSet(collection, next, expectedVersion);
     if (!result.ok) {
+      dataRef.current[collection] = prevSnapshot;
       setter(prevSnapshot);
       const isVersionConflict = result.body?.error === 'version_conflict';
       const reason = result.body?.message || result.body?.error || ('HTTP ' + result.status);
