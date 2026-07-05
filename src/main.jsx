@@ -229,8 +229,8 @@ const App = () => {
     await apiSet('messages', updated);
   };
 
-  const addReply = async (id, text, attachment) => {
-    const reply = { from: user.name, text, attachment, ts: new Date().toLocaleString('de-DE') };
+  const addReply = async (id, text, attachments) => {
+    const reply = { from: user.name, text, attachments: attachments || [], ts: new Date().toLocaleString('de-DE') };
     const updated = messages.map(m => m.id === id ? { ...m, replies: [...(m.replies || []), reply] } : m);
     setMessages(updated);
     await apiSet('messages', updated);
@@ -295,6 +295,9 @@ const catLetter = c => ({ 'Ankündigungen': 'A', 'Events': 'E', 'Info': 'I' }[c]
 const catTone = c => ({ 'Ankündigungen': 'mauve', 'Events': 'green', 'Info': 'green' }[c] || 'green');
 
 const isImage = mime => mime && mime.startsWith('image/');
+
+const MAX_ATTACHMENTS = 5;
+const attachmentsOf = x => x?.attachments || (x?.attachment ? [x.attachment] : []);
 
 const FileChip = ({ name, url }) => (
   url
@@ -517,7 +520,7 @@ const Postfach = ({ user, messages, onMarkRead, onReply }) => (
 const MessageThread = ({ m, user, unread, onOpen, onReply }) => {
   const [open, setOpen] = useState(false);
   const [reply, setReply] = useState('');
-  const [pendingFile, setPendingFile] = useState(null);
+  const [pendingFiles, setPendingFiles] = useState([]);
   return (
     <div style={{ background: T.surface, border: '0.5px solid ' + (unread ? T.mauveSoft : T.line), borderRadius: 10, overflow: 'hidden', marginBottom: 9 }}>
       <div onClick={() => setOpen(o => { if (!o) onOpen(); return !o; })} style={{ padding: '13px 15px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 13 }}>
@@ -531,14 +534,14 @@ const MessageThread = ({ m, user, unread, onOpen, onReply }) => {
       {open && (
         <div style={{ padding: '0 15px 15px 58px', fontSize: 13, lineHeight: 1.65, color: T.muted }}>
           <p style={{ margin: '0 0 8px' }}>{m.text}</p>
-          {m.attachment && <FileChip name={m.attachment.name || m.attachment} url={m.attachment.url || null} />}
+          {attachmentsOf(m).map((a, i) => <FileChip key={i} name={a.name || a} url={a.url || null} />)}
           {m.replies && m.replies.length > 0 && (
             <div style={{ marginTop: 14, borderTop: '1px solid ' + T.lineSoft, paddingTop: 12 }}>
               {m.replies.map((r, i) => (
                 <div key={i} style={{ marginBottom: 10 }}>
                   <p style={{ margin: 0, fontSize: 11, color: T.faint, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{r.from} · {r.ts}</p>
                   <p style={{ margin: '3px 0 0' }}>{r.text}</p>
-                  {r.attachment && <FileChip name={r.attachment.name || r.attachment} url={r.attachment.url || null} />}
+                  {attachmentsOf(r).map((a, i) => <FileChip key={i} name={a.name || a} url={a.url || null} />)}
                 </div>
               ))}
             </div>
@@ -546,10 +549,18 @@ const MessageThread = ({ m, user, unread, onOpen, onReply }) => {
           <div style={{ marginTop: 14, borderTop: '1px solid ' + T.lineSoft, paddingTop: 12 }}>
             <textarea value={reply} onChange={e => setReply(e.target.value)} placeholder="Antwort schreiben …" style={{ width: '100%', minHeight: 60, padding: 10, border: '1px solid ' + T.line, borderRadius: 8, fontSize: 13, boxSizing: 'border-box', fontFamily: 'inherit', color: T.ink, background: T.bg }} />
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
-              <UploadButton folder="antworten" label="+ Datei anhängen" onUploaded={f => setPendingFile(f)} />
-              {pendingFile && <FileChip name={pendingFile.name} url={pendingFile.url} />}
-              <button onClick={() => { if (!reply.trim()) return; onReply(m.id, reply, pendingFile || null); setReply(''); setPendingFile(null); }} style={{ padding: '8px 16px', border: 'none', borderRadius: 8, background: T.mauve, color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Senden</button>
+              {pendingFiles.length < MAX_ATTACHMENTS && (
+                <UploadButton folder="antworten" label="+ Datei anhängen" onUploaded={f => setPendingFiles(fs => [...fs, f])} />
+              )}
+              {pendingFiles.map((f, i) => (
+                <span key={i} style={{ display: 'inline-flex', alignItems: 'center' }}>
+                  <FileChip name={f.name} url={f.url} />
+                  <button onClick={() => setPendingFiles(fs => fs.filter((_, j) => j !== i))} style={{ border: 'none', background: 'none', color: T.faint, cursor: 'pointer', fontSize: 13, marginLeft: -4, marginTop: 8 }} title="Entfernen">×</button>
+                </span>
+              ))}
+              <button onClick={() => { if (!reply.trim()) return; onReply(m.id, reply, pendingFiles); setReply(''); setPendingFiles([]); }} style={{ padding: '8px 16px', border: 'none', borderRadius: 8, background: T.mauve, color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Senden</button>
             </div>
+            {pendingFiles.length >= MAX_ATTACHMENTS && <p style={{ fontSize: 11, color: T.faint, margin: '4px 0 0' }}>Maximal {MAX_ATTACHMENTS} Dateien pro Antwort.</p>}
           </div>
         </div>
       )}
@@ -785,7 +796,7 @@ const AdminTools = ({ tools, onAdd, onUpdate, onDel }) => {
 const AdminPost = ({ employees, messages, onSend }) => {
   const [title, setTitle] = useState(''); const [text, setText] = useState('');
   const [groups, setGroups] = useState([]); const [inds, setInds] = useState([]);
-  const [pendingAttachment, setPendingAttachment] = useState(null);
+  const [pendingAttachments, setPendingAttachments] = useState([]);
   const toggle = (arr, set, v) => set(arr.includes(v) ? arr.filter(x => x !== v) : [...arr, v]);
   return (
     <div>
@@ -794,10 +805,18 @@ const AdminPost = ({ employees, messages, onSend }) => {
         <p style={{ fontSize: 12, color: T.muted, margin: '-0.4rem 0 1rem', lineHeight: 1.6 }}>Geht in den persönlichen Bereich der Empfänger. Empfänger können antworten und Dateien zurücksenden. Alles wird protokolliert.</p>
         <input style={fieldS} placeholder="Betreff" value={title} onChange={e => setTitle(e.target.value)} />
         <textarea style={{ ...fieldS, minHeight: 100 }} placeholder="Text" value={text} onChange={e => setText(e.target.value)} />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-          <UploadButton folder="nachrichten" accept=".pdf,.docx,.xlsx,.doc,.xls,image/*" label="+ Anhang hochladen" onUploaded={f => setPendingAttachment(f)} />
-          {pendingAttachment && <FileChip name={pendingAttachment.name} url={pendingAttachment.url} />}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4, flexWrap: 'wrap' }}>
+          {pendingAttachments.length < MAX_ATTACHMENTS && (
+            <UploadButton folder="nachrichten" accept=".pdf,.docx,.xlsx,.doc,.xls,image/*" label="+ Anhang hochladen" onUploaded={f => setPendingAttachments(fs => [...fs, f])} />
+          )}
+          {pendingAttachments.map((f, i) => (
+            <span key={i} style={{ display: 'inline-flex', alignItems: 'center' }}>
+              <FileChip name={f.name} url={f.url} />
+              <button onClick={() => setPendingAttachments(fs => fs.filter((_, j) => j !== i))} style={{ border: 'none', background: 'none', color: T.faint, cursor: 'pointer', fontSize: 13, marginLeft: -4, marginTop: 8 }} title="Entfernen">×</button>
+            </span>
+          ))}
         </div>
+        {pendingAttachments.length >= MAX_ATTACHMENTS && <p style={{ fontSize: 11, color: T.faint, margin: '0 0 8px' }}>Maximal {MAX_ATTACHMENTS} Dateien pro Nachricht.</p>}
         <p style={subLabel}>An Gruppen</p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
           {GROUPS.map(g => <button key={g} onClick={() => toggle(groups, setGroups, g)} style={{ padding: '7px 13px', borderRadius: 20, fontSize: 12, cursor: 'pointer', border: '1px solid ' + (groups.includes(g) ? T.mauve : T.line), background: groups.includes(g) ? T.mauve : T.surface, color: groups.includes(g) ? '#fff' : T.muted }}>{g}</button>)}
@@ -806,7 +825,7 @@ const AdminPost = ({ employees, messages, onSend }) => {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
           {employees.map(e => <button key={e.id} onClick={() => toggle(inds, setInds, e.id)} style={{ padding: '7px 13px', borderRadius: 20, fontSize: 12, cursor: 'pointer', border: '1px solid ' + (inds.includes(e.id) ? T.green : T.line), background: inds.includes(e.id) ? T.green : T.surface, color: inds.includes(e.id) ? '#fff' : T.muted }}>{e.name}</button>)}
         </div>
-        <button style={primaryBtn} onClick={() => { if (!title || !text) return alert('Betreff und Text nötig'); if (groups.length === 0 && inds.length === 0) return alert('Mindestens einen Empfänger wählen'); onSend({ title, text, attachment: pendingAttachment || null, toGroups: groups, toIndividuals: inds }); setTitle(''); setText(''); setPendingAttachment(null); setGroups([]); setInds([]); }}>Senden</button>
+        <button style={primaryBtn} onClick={() => { if (!title || !text) return alert('Betreff und Text nötig'); if (groups.length === 0 && inds.length === 0) return alert('Mindestens einen Empfänger wählen'); onSend({ title, text, attachments: pendingAttachments, toGroups: groups, toIndividuals: inds }); setTitle(''); setText(''); setPendingAttachments([]); setGroups([]); setInds([]); }}>Senden</button>
       </div>
       <div style={cardS}>
         <Label>Gesendet ({messages.length})</Label>
