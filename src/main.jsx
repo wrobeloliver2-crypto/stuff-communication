@@ -616,7 +616,13 @@ const MessageThread = ({ m, user, unread, onOpen, onReply }) => {
       </div>
       {open && (
         <div style={{ padding: '0 15px 15px 58px', fontSize: 13, lineHeight: 1.65, color: T.muted }}>
+          {m.photos && m.photos.length > 0 && m.photos[0].url && (
+            <div style={{ aspectRatio: '16/9', overflow: 'hidden', borderRadius: 8, marginBottom: 10, maxWidth: 420 }}>
+              <img src={m.photos[0].url} alt={m.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            </div>
+          )}
           <p style={{ margin: '0 0 8px' }}>{m.text}</p>
+          {m.link && <p style={{ margin: '0 0 10px' }}><a href={m.link} target="_blank" rel="noopener noreferrer" style={{ color: T.mauve, fontSize: 13, fontWeight: 500 }}>→ {m.linkLabel || m.link}</a></p>}
           {attachmentsOf(m).map((a, i) => <FileChip key={i} name={a.name || a} url={a.url || null} />)}
           {m.replies && m.replies.length > 0 && (
             <div style={{ marginTop: 14, borderTop: '1px solid ' + T.lineSoft, paddingTop: 12 }}>
@@ -886,18 +892,20 @@ const AdminPost = ({ employees, messages, onSend, onReply, onCloseDialog, onReop
   const [title, setTitle] = useState(''); const [text, setText] = useState('');
   const [groups, setGroups] = useState([]); const [inds, setInds] = useState([]);
   const [pendingAttachments, setPendingAttachments] = useState([]);
+  const [photos, setPhotos] = useState([]);
+  const [link, setLink] = useState(''); const [linkLabel, setLinkLabel] = useState('');
   const [confirmPayload, setConfirmPayload] = useState(null);
   const toggle = (arr, set, v) => set(arr.includes(v) ? arr.filter(x => x !== v) : [...arr, v]);
   const requestSend = () => {
     if (!title || !text) return alert('Betreff und Text nötig');
     if (groups.length === 0 && inds.length === 0) return alert('Mindestens einen Empfänger wählen');
     const recipientNames = [...groups, ...inds.map(id => employees.find(e => e.id === id)?.name)].filter(Boolean);
-    setConfirmPayload({ title, text, attachments: pendingAttachments, toGroups: groups, toIndividuals: inds, recipientNames });
+    setConfirmPayload({ title, text, attachments: pendingAttachments, photos, link: link || null, linkLabel: linkLabel || null, toGroups: groups, toIndividuals: inds, recipientNames });
   };
   const confirmSend = () => {
-    onSend({ title: confirmPayload.title, text: confirmPayload.text, attachments: confirmPayload.attachments, toGroups: confirmPayload.toGroups, toIndividuals: confirmPayload.toIndividuals });
+    onSend({ title: confirmPayload.title, text: confirmPayload.text, attachments: confirmPayload.attachments, photos: confirmPayload.photos, link: confirmPayload.link, linkLabel: confirmPayload.linkLabel, toGroups: confirmPayload.toGroups, toIndividuals: confirmPayload.toIndividuals });
     setConfirmPayload(null);
-    setTitle(''); setText(''); setPendingAttachments([]); setGroups([]); setInds([]);
+    setTitle(''); setText(''); setPendingAttachments([]); setPhotos([]); setLink(''); setLinkLabel(''); setGroups([]); setInds([]);
   };
   return (
     <div>
@@ -906,6 +914,23 @@ const AdminPost = ({ employees, messages, onSend, onReply, onCloseDialog, onReop
         <p style={{ fontSize: 12, color: T.muted, margin: '-0.4rem 0 1rem', lineHeight: 1.6 }}>Geht in den persönlichen Bereich der Empfänger. Empfänger können antworten und Dateien zurücksenden. Alles wird protokolliert.</p>
         <input style={fieldS} placeholder="Betreff" value={title} onChange={e => setTitle(e.target.value)} />
         <textarea style={{ ...fieldS, minHeight: 100 }} placeholder="Text" value={text} onChange={e => setText(e.target.value)} />
+        <p style={subLabel}>Titelbild (optional)</p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14, alignItems: 'center' }}>
+          {photos.map((p, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: T.chip, borderRadius: 8, fontSize: 12, color: T.muted }}>
+              {p.url ? <img src={p.url} alt="" style={{ width: 32, height: 22, objectFit: 'cover', borderRadius: 4 }} /> : '▦'} {p.name}
+              <span onClick={() => setPhotos(ps => ps.filter((_, j) => j !== i))} style={{ cursor: 'pointer', color: T.mauve, fontWeight: 600 }}>×</span>
+            </div>
+          ))}
+          {photos.length === 0 && (
+            <UploadButton folder="nachrichten-fotos" accept="image/*" label="+ Foto hinzufügen" onUploaded={f => setPhotos([{ url: f.url, name: f.name, path: f.path }])} />
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
+          <input style={{ ...fieldS, marginBottom: 0 }} placeholder="Link (z. B. Terminabstimmung, https://…)" value={link} onChange={e => setLink(e.target.value)} />
+          <input style={{ ...fieldS, marginBottom: 0 }} placeholder="Link-Text (optional)" value={linkLabel} onChange={e => setLinkLabel(e.target.value)} />
+        </div>
+        <p style={subLabel}>Anhang (PDF, Word, Excel …)</p>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4, flexWrap: 'wrap' }}>
           {pendingAttachments.length < MAX_ATTACHMENTS && (
             <UploadButton folder="nachrichten" accept=".pdf,.docx,.xlsx,.doc,.xls,image/*" label="+ Anhang hochladen" onUploaded={f => setPendingAttachments(fs => [...fs, f])} />
@@ -937,10 +962,14 @@ const AdminPost = ({ employees, messages, onSend, onReply, onCloseDialog, onReop
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(30,26,20,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }}>
           <div style={{ background: T.surface, borderRadius: 14, padding: '1.6rem', maxWidth: 440, width: '100%', boxShadow: '0 20px 60px rgba(0,0,0,0.25)' }}>
             <Label style={{ margin: '0 0 12px' }}>Nachricht jetzt senden?</Label>
+            {confirmPayload.photos.length > 0 && confirmPayload.photos[0].url && (
+              <img src={confirmPayload.photos[0].url} alt="" style={{ width: '100%', aspectRatio: '16/9', objectFit: 'cover', borderRadius: 8, marginBottom: 10 }} />
+            )}
             <p style={{ margin: '0 0 6px', fontSize: 14, fontWeight: 500, color: T.ink }}>{confirmPayload.title}</p>
             <p style={{ margin: '0 0 14px', fontSize: 13, color: T.muted, lineHeight: 1.6 }}>
               Geht an: <strong style={{ color: T.ink }}>{confirmPayload.recipientNames.join(', ')}</strong>
               {confirmPayload.attachments.length > 0 && <><br />{confirmPayload.attachments.length} Anhang{confirmPayload.attachments.length > 1 ? 'änge' : ''}</>}
+              {confirmPayload.link && <><br />Link: {confirmPayload.linkLabel || confirmPayload.link}</>}
             </p>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <button onClick={() => setConfirmPayload(null)} style={{ padding: '9px 16px', border: '1px solid ' + T.line, borderRadius: 8, background: 'none', color: T.muted, fontSize: 13, cursor: 'pointer' }}>Abbrechen</button>
@@ -972,7 +1001,13 @@ const AdminMessageThread = ({ m, employees, onReply, onCloseDialog, onReopenDial
       </div>
       {open && (
         <div style={{ padding: '14px 15px 16px 58px', fontSize: 13, lineHeight: 1.65, color: T.muted, borderTop: '1px solid ' + T.lineSoft }}>
+          {m.photos && m.photos.length > 0 && m.photos[0].url && (
+            <div style={{ aspectRatio: '16/9', overflow: 'hidden', borderRadius: 8, marginBottom: 10, maxWidth: 420 }}>
+              <img src={m.photos[0].url} alt={m.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            </div>
+          )}
           <p style={{ margin: '0 0 8px' }}>{m.text}</p>
+          {m.link && <p style={{ margin: '0 0 10px' }}><a href={m.link} target="_blank" rel="noopener noreferrer" style={{ color: T.mauve, fontSize: 13, fontWeight: 500 }}>→ {m.linkLabel || m.link}</a></p>}
           {attachmentsOf(m).map((a, i) => <FileChip key={i} name={a.name || a} url={a.url || null} />)}
           {m.replies && m.replies.length > 0 && (
             <div style={{ marginTop: 10, borderTop: '1px solid ' + T.lineSoft, paddingTop: 10 }}>
