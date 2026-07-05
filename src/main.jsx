@@ -848,7 +848,19 @@ const AdminPost = ({ employees, messages, onSend, onReply, onCloseDialog, onReop
   const [title, setTitle] = useState(''); const [text, setText] = useState('');
   const [groups, setGroups] = useState([]); const [inds, setInds] = useState([]);
   const [pendingAttachments, setPendingAttachments] = useState([]);
+  const [confirmPayload, setConfirmPayload] = useState(null);
   const toggle = (arr, set, v) => set(arr.includes(v) ? arr.filter(x => x !== v) : [...arr, v]);
+  const requestSend = () => {
+    if (!title || !text) return alert('Betreff und Text nötig');
+    if (groups.length === 0 && inds.length === 0) return alert('Mindestens einen Empfänger wählen');
+    const recipientNames = [...groups, ...inds.map(id => employees.find(e => e.id === id)?.name)].filter(Boolean);
+    setConfirmPayload({ title, text, attachments: pendingAttachments, toGroups: groups, toIndividuals: inds, recipientNames });
+  };
+  const confirmSend = () => {
+    onSend({ title: confirmPayload.title, text: confirmPayload.text, attachments: confirmPayload.attachments, toGroups: confirmPayload.toGroups, toIndividuals: confirmPayload.toIndividuals });
+    setConfirmPayload(null);
+    setTitle(''); setText(''); setPendingAttachments([]); setGroups([]); setInds([]);
+  };
   return (
     <div>
       <div style={cardS}>
@@ -876,13 +888,29 @@ const AdminPost = ({ employees, messages, onSend, onReply, onCloseDialog, onReop
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
           {employees.map(e => <button key={e.id} onClick={() => toggle(inds, setInds, e.id)} style={{ padding: '7px 13px', borderRadius: 20, fontSize: 12, cursor: 'pointer', border: '1px solid ' + (inds.includes(e.id) ? T.green : T.line), background: inds.includes(e.id) ? T.green : T.surface, color: inds.includes(e.id) ? '#fff' : T.muted }}>{e.name}</button>)}
         </div>
-        <button style={primaryBtn} onClick={() => { if (!title || !text) return alert('Betreff und Text nötig'); if (groups.length === 0 && inds.length === 0) return alert('Mindestens einen Empfänger wählen'); onSend({ title, text, attachments: pendingAttachments, toGroups: groups, toIndividuals: inds }); setTitle(''); setText(''); setPendingAttachments([]); setGroups([]); setInds([]); }}>Senden</button>
+        <button style={primaryBtn} onClick={requestSend}>Senden</button>
       </div>
       <div style={cardS}>
         <Label>Gesendet ({messages.length})</Label>
         {messages.length === 0 && <Empty text="Noch keine Nachrichten gesendet." />}
         {messages.map(m => <AdminMessageThread key={m.id} m={m} employees={employees} onReply={onReply} onCloseDialog={onCloseDialog} onReopenDialog={onReopenDialog} />)}
       </div>
+      {confirmPayload && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(30,26,20,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }}>
+          <div style={{ background: T.surface, borderRadius: 14, padding: '1.6rem', maxWidth: 440, width: '100%', boxShadow: '0 20px 60px rgba(0,0,0,0.25)' }}>
+            <Label style={{ margin: '0 0 12px' }}>Nachricht jetzt senden?</Label>
+            <p style={{ margin: '0 0 6px', fontSize: 14, fontWeight: 500, color: T.ink }}>{confirmPayload.title}</p>
+            <p style={{ margin: '0 0 14px', fontSize: 13, color: T.muted, lineHeight: 1.6 }}>
+              Geht an: <strong style={{ color: T.ink }}>{confirmPayload.recipientNames.join(', ')}</strong>
+              {confirmPayload.attachments.length > 0 && <><br />{confirmPayload.attachments.length} Anhang{confirmPayload.attachments.length > 1 ? 'änge' : ''}</>}
+            </p>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button onClick={() => setConfirmPayload(null)} style={{ padding: '9px 16px', border: '1px solid ' + T.line, borderRadius: 8, background: 'none', color: T.muted, fontSize: 13, cursor: 'pointer' }}>Abbrechen</button>
+              <button onClick={confirmSend} style={{ padding: '9px 18px', border: 'none', borderRadius: 8, background: T.mauve, color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Ja, senden</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -893,17 +921,19 @@ const AdminMessageThread = ({ m, employees, onReply, onCloseDialog, onReopenDial
   const [pendingFiles, setPendingFiles] = useState([]);
   const recipientNames = [...m.toGroups, ...m.toIndividuals.map(id => employees.find(e => e.id === id)?.name)].filter(Boolean).join(', ');
   return (
-    <div style={{ borderBottom: '1px solid ' + T.lineSoft }}>
-      <div onClick={() => setOpen(o => !o)} style={{ padding: '11px 0', cursor: 'pointer' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-          <p style={{ margin: 0, fontSize: 14, color: T.ink }}>{m.title}{m.closed ? <span style={{ fontSize: 10, color: T.faint, fontWeight: 400, marginLeft: 8, letterSpacing: '0.04em', textTransform: 'uppercase' }}>· beendet</span> : null}</p>
-          <span style={{ fontSize: 11, color: T.faint, whiteSpace: 'nowrap' }}>{m.readBy.length} gelesen{m.replies?.length ? ' · ' + m.replies.length + ' Antworten' : ''} {open ? '▴' : '▾'}</span>
+    <div style={{ background: T.surface, border: '1px solid ' + (open ? T.mauveSoft : T.line), borderRadius: 10, marginBottom: 10, overflow: 'hidden', boxShadow: open ? '0 3px 14px rgba(176,120,130,0.10)' : 'none' }}>
+      <div onClick={() => setOpen(o => !o)} style={{ padding: '13px 15px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 13 }}>
+        <Marker letter={m.closed ? '✓' : '→'} tone="solid" />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ margin: 0, fontSize: 14, color: T.ink, fontWeight: 500 }}>{m.title}{m.closed ? <span style={{ fontSize: 10, color: T.faint, fontWeight: 400, marginLeft: 8, letterSpacing: '0.04em', textTransform: 'uppercase' }}>· beendet</span> : null}</p>
+          <p style={{ margin: '2px 0 0', fontSize: 11, color: T.faint, letterSpacing: '0.04em', textTransform: 'uppercase' }}>an {recipientNames} · {m.created}</p>
+          {m.readBy.length > 0 && <p style={{ margin: '4px 0 0', fontSize: 11, color: T.greenSoft }}>gelesen von: {m.readBy.map(r => r.name).join(', ')}</p>}
         </div>
-        <p style={{ margin: '3px 0 0', fontSize: 11, color: T.faint, letterSpacing: '0.04em', textTransform: 'uppercase' }}>an {recipientNames} · {m.created}</p>
-        {m.readBy.length > 0 && <p style={{ margin: '4px 0 0', fontSize: 11, color: T.greenSoft }}>gelesen von: {m.readBy.map(r => r.name).join(', ')}</p>}
+        <span style={{ fontSize: 11, color: T.faint, whiteSpace: 'nowrap', textAlign: 'right', lineHeight: 1.5 }}>{m.readBy.length} gelesen{m.replies?.length ? <><br />{m.replies.length} Antworten</> : null}</span>
+        <span style={{ color: '#c4bfb2', fontSize: 12 }}>{open ? '▴' : '▾'}</span>
       </div>
       {open && (
-        <div style={{ padding: '4px 0 16px', fontSize: 13, lineHeight: 1.65, color: T.muted }}>
+        <div style={{ padding: '14px 15px 16px 58px', fontSize: 13, lineHeight: 1.65, color: T.muted, borderTop: '1px solid ' + T.lineSoft }}>
           <p style={{ margin: '0 0 8px' }}>{m.text}</p>
           {attachmentsOf(m).map((a, i) => <FileChip key={i} name={a.name || a} url={a.url || null} />)}
           {m.replies && m.replies.length > 0 && (
