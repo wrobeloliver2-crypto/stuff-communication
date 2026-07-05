@@ -120,14 +120,25 @@ const apiGet = async (collection) => {
   return data.data;
 };
 
+// Beide Funktionen geben jetzt { ok, status, body } zurück, statt die
+// Server-Antwort zu ignorieren. So kann der Aufrufer (commit()) erkennen,
+// ob der Schreibvorgang wirklich angenommen wurde (z. B. vom serverseitigen
+// Schutz gegen leeres Überschreiben mit 409 abgelehnt) und entsprechend
+// reagieren, statt einen fehlgeschlagenen Schreibvorgang lokal als Erfolg
+// zu behandeln.
 const apiSet = async (collection, payload) => {
   pendingWrites++;
   try {
-    await fetch(API, {
+    const res = await fetch(API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ collection, action: 'set', payload }),
     });
+    let body = null;
+    try { body = await res.json(); } catch (e) {}
+    return { ok: res.ok && body?.ok !== false, status: res.status, body };
+  } catch (err) {
+    return { ok: false, status: 0, body: { error: err.message } };
   } finally {
     pendingWrites--;
     writeCooldownUntil = Date.now() + 3000;
@@ -137,11 +148,16 @@ const apiSet = async (collection, payload) => {
 const apiAppend = async (collection, payload) => {
   pendingWrites++;
   try {
-    await fetch(API, {
+    const res = await fetch(API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ collection, action: 'append', payload }),
     });
+    let body = null;
+    try { body = await res.json(); } catch (e) {}
+    return { ok: res.ok && body?.ok !== false, status: res.status, body };
+  } catch (err) {
+    return { ok: false, status: 0, body: { error: err.message } };
   } finally {
     pendingWrites--;
     writeCooldownUntil = Date.now() + 3000;
@@ -247,19 +263,30 @@ const App = () => {
   //    echte Daten überschreiben).
   // 2. Ein Schreibvorgang, der eine zuvor gefüllte Collection auf KOMPLETT LEER
   //    setzen würde, wird blockiert (Schutz vor versehentlichem „alles weg").
-  const commit = (setter, collection, transform) => {
+  const commit = async (setter, collection, transform) => {
     if (!dataLoaded.current) {
       console.warn('Schreibvorgang blockiert: Daten noch nicht geladen (' + collection + ')');
-      return Promise.resolve();
+      return;
     }
     let prevSnapshot, next;
     setter(prev => { prevSnapshot = prev; next = transform(prev); return next; });
     if ((!next || next.length === 0) && prevSnapshot && prevSnapshot.length > 1) {
       console.warn('Schreibvorgang blockiert: würde ' + collection + ' komplett leeren (' + prevSnapshot.length + ' Einträge)');
       setter(prevSnapshot); // lokalen State zurücksetzen
-      return Promise.resolve();
+      return;
     }
-    return apiSet(collection, next);
+    // Die lokale Anzeige wurde oben bereits optimistisch aktualisiert (next).
+    // Jetzt prüfen, ob der Server den Schreibvorgang wirklich angenommen hat.
+    // Falls nicht (z. B. 409 vom serverseitigen Schutz, Netzwerkfehler o. ä.),
+    // wird der lokale Stand zurückgerollt und der Fehler sichtbar gemacht —
+    // statt stumm einen fehlgeschlagenen Vorgang als Erfolg zu zeigen.
+    const result = await apiSet(collection, next);
+    if (!result.ok) {
+      setter(prevSnapshot);
+      const reason = result.body?.message || result.body?.error || ('HTTP ' + result.status);
+      alert('Änderung konnte NICHT gespeichert werden und wurde rückgängig gemacht.\n\nGrund: ' + reason);
+    }
+    return result;
   };
 
   const addNews = async n => {
