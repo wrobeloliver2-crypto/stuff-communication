@@ -248,7 +248,7 @@ const App = () => {
 
     loadAll().finally(() => setLoading(false));
 
-    const interval = setInterval(loadAll, 20000);
+    const interval = setInterval(loadAll, 60000);
     const onVisible = () => { if (document.visibilityState === 'visible') loadAll(); };
     document.addEventListener('visibilitychange', onVisible);
 
