@@ -1,4 +1,4 @@
-const { sheetsGet, sheetsBatchGetAll, sheetsClear, sheetsUpdate, sheetsAppend } = require('./sheets_light');
+const { sheetsGet, sheetsBatchGetAll, sheetsClearRange, sheetsUpdate, sheetsAppend } = require('./sheets_light');
 
 const ALL_COLLECTIONS = ['news', 'tools', 'messages', 'employees', 'audit'];
 
@@ -65,10 +65,23 @@ exports.handler = async (event) => {
           }
         }
 
-        await sheetsClear(collection);
+        // Nicht-leerer Payload: ERST die neuen Daten schreiben, DANACH nur
+        // die überschüssigen alten Zeilen am Ende leeren. So gibt es nie
+        // einen Moment, in dem ein gleichzeitiger Leser eine leere oder
+        // unvollständige Sicht auf die Collection bekommt (siehe Kommentar
+        // bei sheetsClearRange). Das alte Verhalten (erst alles leeren, dann
+        // schreiben) erzeugte genau dieses Zeitfenster und war die Ursache
+        // für mehrere "Änderung nicht gespeichert"-Fälle, obwohl die
+        // eigentliche Aktion der Nutzerin ganz normal war.
+        //
+        // Sonderfall: incoming.length === 0 kommt nur hierher, wenn der
+        // Guard oben es explizit zugelassen hat (z. B. der letzte von 0/1
+        // vorhandenen Einträgen wird bewusst gelöscht). Dann gibt es nichts
+        // zu schreiben — nur der vollständige Clear ist nötig.
         if (incoming.length > 0) {
           await sheetsUpdate(collection, incoming.map(objToRow));
         }
+        await sheetsClearRange(collection, incoming.length + 1);
         return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ ok: true }) };
       }
 
