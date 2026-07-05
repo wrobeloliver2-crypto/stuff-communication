@@ -1,4 +1,4 @@
-const { sheetsGet, sheetsBatchGetAll, sheetsClearRange, sheetsUpdate, sheetsAppend } = require('./sheets_light');
+const { sheetsGet, sheetsBatchGetAll, sheetsClearRange, sheetsUpdate, sheetsAppend, sheetsGetVersion, sheetsSetVersion } = require('./sheets_light');
 
 const ALL_COLLECTIONS = ['news', 'tools', 'messages', 'employees', 'audit'];
 
@@ -29,24 +29,65 @@ exports.handler = async (event) => {
         for (const name of ALL_COLLECTIONS) {
           data[name] = raw[name].map(rowToObj).filter(Boolean);
         }
-        return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ ok: true, data }) };
+        // Versionen aller Collections parallel abfragen (eigenes kleines
+        // "_versions"-Blatt, siehe sheets_light.js) statt sequenziell, um die
+        // zusätzliche Latenz des periodischen Frontend-Polls gering zu halten.
+        const versionEntries = await Promise.all(
+          ALL_COLLECTIONS.map(async name => [name, await sheetsGetVersion(name)])
+        );
+        const versions = Object.fromEntries(versionEntries);
+        return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ ok: true, data, versions }) };
       }
 
       const rows = await sheetsGet(col, 'A1:A10000');
       const data = rows.map(rowToObj).filter(Boolean);
-      return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ ok: true, data }) };
+      const version = await sheetsGetVersion(col);
+      return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ ok: true, data, version }) };
     }
 
     if (event.httpMethod === 'POST') {
-      const { collection, action, payload } = JSON.parse(event.body || '{}');
+      const { collection, action, payload, expectedVersion } = JSON.parse(event.body || '{}');
       if (!collection || !action) return { statusCode: 400, headers: HEADERS, body: JSON.stringify({ error: 'collection/action fehlt' }) };
 
       if (action === 'set') {
         const incoming = Array.isArray(payload) ? payload : [];
 
-        // SCHUTZ: Leeres Überschreiben ablehnen, wenn bereits Daten vorhanden sind.
-        // Fängt den Stale-Closure-Bug ab (Client schickt [] bevor der State geladen ist),
-        // serverseitig – wirkt daher unabhängig vom JS-Cache-Stand des Clients.
+        // SCHUTZ 1 (Versions-Check): Erkennt JEDE Art von "jemand anderes hat
+        // die Collection inzwischen verändert" — nicht nur den Spezialfall
+        // "komplett leer". Der Client schickt die Version mit, die er beim
+        // letzten Laden gesehen hat (expectedVersion). Weicht sie von der
+        // aktuellen Sheet-Version ab, hat ein anderer Tab/Gerät zwischen dem
+        // Laden und jetzt bereits geschrieben — dieser Schreibvorgang würde
+        // die fremde Änderung stillschweigend überschreiben (Lost Update).
+        // Wird abgelehnt statt ausgeführt.
+        //
+        // Abwärtskompatibel: expectedVersion ist optional. Ein Client mit
+        // altem, gecachtem JS-Bundle schickt es nicht mit — dann wird NUR der
+        // alte Leer-Guard (SCHUTZ 2) angewendet, wie bisher.
+        const hasVersionCheck = typeof expectedVersion === 'number';
+        let currentVersion = null;
+        if (hasVersionCheck) {
+          currentVersion = await sheetsGetVersion(collection);
+          if (currentVersion !== expectedVersion) {
+            return {
+              statusCode: 409,
+              headers: HEADERS,
+              body: JSON.stringify({
+                ok: false,
+                error: 'version_conflict',
+                collection,
+                expectedVersion,
+                currentVersion,
+                message: 'Diese Liste wurde inzwischen von einer anderen Sitzung geändert (z. B. einem zweiten geöffneten Tab oder einer anderen Person). Bitte die Seite neu laden und die Änderung erneut vornehmen.'
+              })
+            };
+          }
+        }
+
+        // SCHUTZ 2 (Leer-Guard): Zusätzliches Sicherheitsnetz, unabhängig vom
+        // Versions-Check. Fängt insbesondere Clients ohne Versionsprüfung ab
+        // (siehe oben) sowie den ursprünglichen Stale-Closure-Bug (Client
+        // schickt [] bevor der State geladen ist).
         if (incoming.length === 0) {
           const existingRows = await sheetsGet(collection, 'A1:A10000');
           const existing = existingRows.map(rowToObj).filter(Boolean);
@@ -59,7 +100,7 @@ exports.handler = async (event) => {
                 error: 'refused_empty_overwrite',
                 collection,
                 existing: existing.length,
-                message: 'Leeres Überschreiben abgelehnt: es sind bereits Einträge vorhanden.'
+                message: 'Leeres Überschreiben abgelehnt: es sind bereits Einträge vorhanden. Bitte die Seite neu laden und erneut versuchen.'
               })
             };
           }
@@ -74,15 +115,37 @@ exports.handler = async (event) => {
         // für mehrere "Änderung nicht gespeichert"-Fälle, obwohl die
         // eigentliche Aktion der Nutzerin ganz normal war.
         //
-        // Sonderfall: incoming.length === 0 kommt nur hierher, wenn der
-        // Guard oben es explizit zugelassen hat (z. B. der letzte von 0/1
+        // Sonderfall: incoming.length === 0 kommt nur hierher, wenn beide
+        // Guards oben es explizit zugelassen haben (z. B. der letzte von 0/1
         // vorhandenen Einträgen wird bewusst gelöscht). Dann gibt es nichts
         // zu schreiben — nur der vollständige Clear ist nötig.
         if (incoming.length > 0) {
           await sheetsUpdate(collection, incoming.map(objToRow));
         }
         await sheetsClearRange(collection, incoming.length + 1);
-        return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ ok: true }) };
+
+        // Version hochzählen, wenn der Client eine Versionsprüfung genutzt
+        // hat. Die neue Version geht in der Antwort zurück, damit der Client
+        // seinen lokalen Stand sofort übernehmen kann, ohne extra nachzuladen.
+        //
+        // Eigenes try/catch bewusst getrennt vom Rest: Die eigentlichen
+        // Daten (oben) sind an dieser Stelle bereits erfolgreich geschrieben.
+        // Würde sheetsSetVersion z. B. wegen eines noch fehlenden
+        // "_versions"-Tabellenblatts fehlschlagen, soll das NICHT dazu
+        // führen, dass der ganze Request als Fehler beantwortet wird und der
+        // Client seine (tatsächlich erfolgreiche) Änderung lokal zurückrollt.
+        // Der nächste Schreibvorgang hätte dann zwar wieder keinen
+        // Versionsschutz, aber das ist strikt besser als ein falsches
+        // Fehlersignal bei einer geglückten Aktion.
+        let newVersion = null;
+        if (hasVersionCheck) {
+          try {
+            newVersion = await sheetsSetVersion(collection, currentVersion + 1);
+          } catch (versionErr) {
+            console.warn('sheetsSetVersion fehlgeschlagen, Daten wurden trotzdem gespeichert: ' + versionErr.message);
+          }
+        }
+        return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ ok: true, version: newVersion }) };
       }
 
       if (action === 'append') {
