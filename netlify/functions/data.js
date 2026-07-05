@@ -1,4 +1,6 @@
-const { sheetsGet, sheetsClear, sheetsUpdate, sheetsAppend } = require('./sheets_light');
+const { sheetsGet, sheetsBatchGetAll, sheetsClear, sheetsUpdate, sheetsAppend } = require('./sheets_light');
+
+const ALL_COLLECTIONS = ['news', 'tools', 'messages', 'employees', 'audit'];
 
 const HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -16,6 +18,20 @@ exports.handler = async (event) => {
     if (event.httpMethod === 'GET') {
       const col = event.queryStringParameters?.collection;
       if (!col) return { statusCode: 400, headers: HEADERS, body: JSON.stringify({ error: 'collection fehlt' }) };
+
+      // Sonderfall: alle Collections in EINEM Sheets-API-Aufruf statt 5
+      // einzelnen. Wird vom Frontend für den periodischen Poll genutzt,
+      // um das Google-Sheets-Lese-Kontingent zu schonen (siehe Kommentar
+      // bei sheetsBatchGetAll).
+      if (col === 'all') {
+        const raw = await sheetsBatchGetAll(ALL_COLLECTIONS);
+        const data = {};
+        for (const name of ALL_COLLECTIONS) {
+          data[name] = raw[name].map(rowToObj).filter(Boolean);
+        }
+        return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ ok: true, data }) };
+      }
+
       const rows = await sheetsGet(col, 'A1:A10000');
       const data = rows.map(rowToObj).filter(Boolean);
       return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ ok: true, data }) };
