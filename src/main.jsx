@@ -235,22 +235,63 @@ const App = () => {
 
   // Laden von den Sheets — beim Start, danach automatisch alle 20 Sekunden
   // und sobald der Tab wieder in den Vordergrund kommt (z. B. nach Tab-Wechsel).
+// Selbstheilung gegen Einträge ohne "id"-Feld: Kann passieren, wenn Daten
+// nicht über die App selbst angelegt wurden, sondern direkt ins Google
+// Sheet geschrieben wurden (z. B. Seed-Content aus einer Chat-Session ohne
+// das App-eigene addNews). Ohne id kollidieren React-Keys (mehrere
+// Einträge mit key=undefined) und delNews/updateNews können den falschen
+// oder gar keinen Eintrag treffen, je nachdem was der Nutzer anklickt.
+// Vergibt fehlenden Einträgen eine stabile id, in Einfüge-Reihenfolge
+// versetzt (damit garantiert keine Kollision mit vorhandenen numerischen
+// Date.now()-ids entsteht) und markiert das Ergebnis, damit der Aufrufer
+// weiß, ob geschrieben werden muss.
+const backfillMissingIds = (items) => {
+  let fixedCount = 0;
+  const seen = new Set(items.map(x => x.id).filter(id => id !== undefined && id !== null));
+  const fixed = items.map((item, i) => {
+    if (item.id !== undefined && item.id !== null) return item;
+    fixedCount++;
+    let candidate = 'auto_' + Date.now() + '_' + i;
+    while (seen.has(candidate)) candidate = candidate + '_';
+    seen.add(candidate);
+    return { ...item, id: candidate };
+  });
+  return { items: fixed, fixedCount };
+};
+
   useEffect(() => {
     const loadAll = async () => {
       if (isWriteInProgressOrRecent()) return;
       try {
         const { items, versions } = await apiGetAll();
         const { news: n, tools: t, messages: m, employees: e, audit: a } = items;
-        if (n.length) setNews(n);
-        if (t.length) setTools(t); else setTools(DEFAULT_TOOLS);
+        // Versionsstände und dataLoaded MÜSSEN vor den backfillMissingIds-
+        // Aufrufen unten gesetzt werden: commit() (aufgerufen für die
+        // Backfill-Korrektur) prüft dataLoaded.current als allererstes und
+        // würde sich sonst selbst blockieren, und braucht den aktuellen
+        // Versionsstand als expectedVersion.
+        versionsRef.current = { ...versionsRef.current, ...versions };
+        dataLoaded.current = true;
+
+        if (n.length) {
+          const { items: fixedNews, fixedCount } = backfillMissingIds(n);
+          setNews(fixedNews);
+          if (fixedCount > 0) {
+            console.warn('news: ' + fixedCount + ' Einträge ohne id gefunden, wird korrigiert und gespeichert.');
+            commit(setNews, 'news', () => fixedNews, true);
+          }
+        }
+        if (t.length) {
+          const { items: fixedTools, fixedCount } = backfillMissingIds(t);
+          setTools(fixedTools);
+          if (fixedCount > 0) {
+            console.warn('tools: ' + fixedCount + ' Einträge ohne id gefunden, wird korrigiert und gespeichert.');
+            commit(setTools, 'tools', () => fixedTools, true);
+          }
+        } else setTools(DEFAULT_TOOLS);
         if (m.length) setMessages(m);
         if (e.length) setEmployees(e); else setEmployees(EMPLOYEES);
         if (a.length) setAudit(a);
-        // Versionsstände immer übernehmen (auch für leere Collections), damit
-        // commit() beim nächsten Schreibvorgang gegen den aktuellen Server-
-        // Stand prüfen kann — nicht gegen einen veralteten oder fehlenden Wert.
-        versionsRef.current = { ...versionsRef.current, ...versions };
-        dataLoaded.current = true;
 
         // Gespeicherte Mitarbeiter-Session wiederherstellen — nur beim
         // allerersten Laden, per ref abgesichert (siehe Kommentar oben bei
@@ -346,7 +387,7 @@ const App = () => {
   //    setzen würde, wird zusätzlich blockiert (Schutz vor versehentlichem
   //    „alles weg", greift auch wenn aus irgendeinem Grund keine Version
   //    bekannt ist).
-  const commit = async (setter, collection, transform) => {
+  const commit = async (setter, collection, transform, silent = false) => {
     if (!dataLoaded.current) {
       console.warn('Schreibvorgang blockiert: Daten noch nicht geladen (' + collection + ')');
       return;
@@ -370,14 +411,21 @@ const App = () => {
       setter(prevSnapshot);
       const isVersionConflict = result.body?.error === 'version_conflict';
       const reason = result.body?.message || result.body?.error || ('HTTP ' + result.status);
-      // Bei einem erkannten Versions-Konflikt bekommt der Nutzer eine klare
-      // Ursache ("eine andere Sitzung hat das inzwischen geändert") und eine
-      // konkrete Handlungsoption (neu laden + erneut versuchen), statt nur
-      // "Grund: version_conflict". Der servergenerierte Text in
-      // result.body.message ist bereits so formuliert; hier wird er nur mit
-      // einer kurzen Kopfzeile eingerahmt, um ihn vom generischen Fall
-      // (z. B. Netzwerkfehler) optisch abzuheben.
-      if (isVersionConflict) {
+      // silent: Für automatische Hintergrund-Korrekturen (z. B. den
+      // id-Backfill in loadAll), bei denen der Nutzer nichts angeklickt hat.
+      // Ein alert() wäre dort verwirrend ("Gleichzeitige Änderung erkannt"
+      // direkt nach dem Laden, ohne eigenes Zutun) — die Konsole reicht,
+      // der nächste loadAll()-Zyklus versucht die Korrektur ohnehin erneut.
+      if (silent) {
+        console.warn('Automatischer Hintergrund-Schreibvorgang fehlgeschlagen (' + collection + '): ' + reason);
+      } else if (isVersionConflict) {
+        // Bei einem erkannten Versions-Konflikt bekommt der Nutzer eine klare
+        // Ursache ("eine andere Sitzung hat das inzwischen geändert") und eine
+        // konkrete Handlungsoption (neu laden + erneut versuchen), statt nur
+        // "Grund: version_conflict". Der servergenerierte Text in
+        // result.body.message ist bereits so formuliert; hier wird er nur mit
+        // einer kurzen Kopfzeile eingerahmt, um ihn vom generischen Fall
+        // (z. B. Netzwerkfehler) optisch abzuheben.
         alert('Gleichzeitige Änderung erkannt\n\n' + reason);
       } else {
         alert('Änderung konnte NICHT gespeichert werden und wurde rückgängig gemacht.\n\nGrund: ' + reason);
