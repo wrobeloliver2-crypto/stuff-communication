@@ -106,6 +106,22 @@ const DEFAULT_TOOLS = [
 
 const API = '/.netlify/functions/data';
 
+// Schlüssel für die dauerhafte Mitarbeiter-Session (localStorage). Enthält
+// NUR die Mitarbeiter-ID und den PIN — dient dazu, nach einem Neuladen der
+// Seite automatisch wieder einzuloggen. Der Admin-Login bleibt bewusst
+// session-los (kein Speichern), sodass dort weiterhin bei jedem Neuladen
+// E-Mail + Passwort eingegeben werden müssen.
+const EMP_SESSION_KEY = 'stuff_employee_session';
+const saveEmpSession = (id, pin) => {
+  try { localStorage.setItem(EMP_SESSION_KEY, JSON.stringify({ id, pin })); } catch (e) {}
+};
+const clearEmpSession = () => {
+  try { localStorage.removeItem(EMP_SESSION_KEY); } catch (e) {}
+};
+const loadEmpSession = () => {
+  try { return JSON.parse(localStorage.getItem(EMP_SESSION_KEY) || 'null'); } catch (e) { return null; }
+};
+
 // Verhindert, dass der automatische Hintergrund-Sync eine gerade erst
 // gespeicherte Änderung sofort wieder mit veralteten Sheets-Daten überschreibt:
 // Solange ein Schreibvorgang läuft (oder gerade eben lief), setzt der Sync aus.
@@ -177,6 +193,11 @@ const App = () => {
   // geladen wurden. Vorher darf NICHTS ins Sheet geschrieben werden, sonst
   // könnte ein leerer Anfangszustand echte Daten überschreiben.
   const dataLoaded = useRef(false);
+  // Verhindert, dass der Versuch, eine gespeicherte Mitarbeiter-Session
+  // wiederherzustellen, bei JEDEM periodischen 20-Sekunden-Reload erneut
+  // läuft (der useEffect unten hat ein leeres Dependency-Array, "user" wäre
+  // dort sonst eine veraltete Kopie von null).
+  const sessionRestoreAttempted = useRef(false);
 
   // Laden von den Sheets — beim Start, danach automatisch alle 20 Sekunden
   // und sobald der Tab wieder in den Vordergrund kommt (z. B. nach Tab-Wechsel).
@@ -197,6 +218,24 @@ const App = () => {
         if (e.length) setEmployees(e); else setEmployees(EMPLOYEES);
         if (a.length) setAudit(a);
         dataLoaded.current = true;
+
+        // Gespeicherte Mitarbeiter-Session wiederherstellen — nur beim
+        // allerersten Laden, per ref abgesichert (siehe Kommentar oben bei
+        // sessionRestoreAttempted).
+        if (!sessionRestoreAttempted.current) {
+          sessionRestoreAttempted.current = true;
+          const saved = loadEmpSession();
+          if (saved) {
+            const empList = e.length ? e : EMPLOYEES;
+            const match = empList.find(x => x.id === saved.id && x.pinSet && x.pin === saved.pin);
+            if (match) {
+              setUser(match);
+              setPage('employee');
+            } else {
+              clearEmpSession(); // PIN wurde zurückgesetzt o.ä. — Session ungültig
+            }
+          }
+        }
       } catch (err) {
         console.warn('Sheets nicht erreichbar:', err.message);
       }
@@ -229,6 +268,7 @@ const App = () => {
     });
     setUser(emp);
     setPage('employee');
+    saveEmpSession(emp.id, pin);
     await logA('PIN gesetzt', emp.name, 'Erstanmeldung');
   };
 
@@ -237,6 +277,7 @@ const App = () => {
     if (emp && emp.pinSet && emp.pin === pin) {
       setUser(emp);
       setPage('employee');
+      saveEmpSession(emp.id, pin);
       await logA('Login', emp.name, 'Mitarbeiter');
     } else alert('PIN falsch');
   };
@@ -250,7 +291,7 @@ const App = () => {
     } else alert('E-Mail oder Passwort falsch');
   };
 
-  const logout = () => { setUser(null); setPage('login'); };
+  const logout = () => { setUser(null); setPage('login'); clearEmpSession(); };
 
   // Schreibt eine Collection immer auf Basis des AKTUELLSTEN States (funktionale
   // Form), nie auf Basis einer veralteten Closure-Kopie. Das verhindert, dass
