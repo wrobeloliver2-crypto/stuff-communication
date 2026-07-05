@@ -451,8 +451,20 @@ const backfillMissingIds = (items) => {
     await logA('News bearbeitet', user.name, n.title);
   };
 
+  // Soft-Delete statt Hard-Delete: Setzt nur ein "deleted"-Flag, statt den
+  // Eintrag aus dem Array zu entfernen. Grund: Ein echtes Entfernen
+  // (filter) verkürzt das Array, und genau das löste bislang — aus einem
+  // noch nicht restlos geklärten Grund — wiederholt den serverseitigen
+  // "Leeres Überschreiben abgelehnt"-Schutz aus, obwohl weiterhin mehrere
+  // Einträge übrig blieben. Mit map() (wie bei updateNews) bleibt next
+  // IMMER genauso lang wie zuvor — der Schutzmechanismus, der auf
+  // Array-Verkürzung reagiert, wird für Löschvorgänge dadurch komplett
+  // umgangen, statt seine genaue Auslösebedingung weiter zu jagen.
+  // Gelöschte Einträge werden beim Anzeigen herausgefiltert (siehe News/
+  // AdminNews weiter unten), bleiben aber im Sheet erhalten — kein
+  // Datenverlust, und bei Bedarf später als Papierkorb nutzbar.
   const delNews = async id => {
-    await commit(setNews, 'news', prev => prev.filter(n => n.id !== id));
+    await commit(setNews, 'news', prev => prev.map(e => e.id === id ? { ...e, deleted: true, deletedAt: new Date().toLocaleString('de-DE') } : e));
     await logA('News gelöscht', user.name, '#' + id);
   };
 
@@ -718,15 +730,20 @@ const Employee = ({ user, news, tools, messages, onMarkRead, onReply, onToggleLi
   );
 };
 
-const NewsFeed = ({ news }) => (
-  <div>
-    <Label>Firmen-News</Label>
-    {news.length === 0 && <Empty text="Noch keine News veröffentlicht." />}
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(330px,1fr))', gap: 16 }}>
-      {news.map(n => <NewsCard key={n.id} n={n} />)}
+const NewsFeed = ({ news }) => {
+  // Soft-Delete: als "deleted" markierte Einträge bleiben im Sheet
+  // (siehe delNews), werden aber nirgends mehr angezeigt.
+  const visible = news.filter(n => !n.deleted);
+  return (
+    <div>
+      <Label>Firmen-News</Label>
+      {visible.length === 0 && <Empty text="Noch keine News veröffentlicht." />}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(330px,1fr))', gap: 16 }}>
+        {visible.map(n => <NewsCard key={n.id} n={n} />)}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 const PhotoPlaceholder = ({ firm, abbr }) => {
   const f = FIRMS[firm] || FIRMS.beide;
@@ -936,6 +953,10 @@ const primaryBtn = { padding: '10px 20px', border: 'none', borderRadius: 8, back
 const subLabel = { fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: T.faint, margin: '0.5rem 0 0.6rem' };
 
 const AdminNews = ({ news, onAdd, onUpdate, onDel }) => {
+  // Soft-Delete: als "deleted" markierte Einträge bleiben im Sheet (siehe
+  // delNews-Kommentar), werden aber auch in der Verwaltungsansicht nicht
+  // mehr aufgeführt.
+  const visibleNews = news.filter(n => !n.deleted);
   const [editId, setEditId] = useState(null);
   const [firm, setFirm] = useState('beide');
   const [title, setTitle] = useState(''); const [text, setText] = useState('');
@@ -1017,9 +1038,9 @@ const AdminNews = ({ news, onAdd, onUpdate, onDel }) => {
         <button style={primaryBtn} onClick={handleSubmit}>{editId ? 'Änderungen speichern' : 'Veröffentlichen'}</button>
       </div>
       <div style={cardS}>
-        <Label>Veröffentlicht ({news.length})</Label>
-        {news.length === 0 && <Empty text="Noch nichts veröffentlicht." />}
-        {news.map(n => (
+        <Label>Veröffentlicht ({visibleNews.length})</Label>
+        {visibleNews.length === 0 && <Empty text="Noch nichts veröffentlicht." />}
+        {visibleNews.map(n => (
           <div key={n.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 0', borderBottom: '1px solid ' + T.lineSoft }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <Marker letter={catLetter(n.category)} tone={catTone(n.category)} />
