@@ -26,6 +26,25 @@ const sheetsGet = async (sheet, range) => {
   return data.values || [];
 };
 
+// Liest mehrere Blätter in EINEM einzigen API-Aufruf (statt einem Request pro
+// Blatt). Wichtig, um das Google-Sheets-Lese-Kontingent zu schonen: Der
+// periodische Poll aus dem Frontend fragt sonst 5 Collections einzeln ab —
+// bei mehreren gleichzeitig geöffneten Sessions (z. B. 21 Mitarbeitende)
+// summiert sich das schnell zu "Quota exceeded" (Read requests per minute).
+const sheetsBatchGetAll = async (sheetNames, range = 'A1:A10000') => {
+  const token = await getToken();
+  const rangesParam = sheetNames.map(s => `ranges=${encodeURIComponent(s + '!' + range)}`).join('&');
+  const url = `${BASE}/${SHEET_ID}/values:batchGet?${rangesParam}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message);
+  const result = {};
+  sheetNames.forEach((name, i) => {
+    result[name] = (data.valueRanges && data.valueRanges[i] && data.valueRanges[i].values) || [];
+  });
+  return result;
+};
+
 const sheetsClear = async (sheet) => {
   const token = await getToken();
   const url = `${BASE}/${SHEET_ID}/values/${encodeURIComponent(sheet + '!A1:Z10000')}:clear`;
@@ -56,4 +75,4 @@ const sheetsAppend = async (sheet, values) => {
   if (data.error) throw new Error(data.error.message);
 };
 
-module.exports = { sheetsGet, sheetsClear, sheetsUpdate, sheetsAppend };
+module.exports = { sheetsGet, sheetsBatchGetAll, sheetsClear, sheetsUpdate, sheetsAppend };
