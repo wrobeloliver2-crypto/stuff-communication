@@ -129,37 +129,52 @@ let pendingWrites = 0;
 let writeCooldownUntil = 0;
 const isWriteInProgressOrRecent = () => pendingWrites > 0 || Date.now() < writeCooldownUntil;
 
+// Gibt jetzt zusätzlich die Sheets-Version der Collection zurück (siehe
+// versionsRef weiter unten). apiGet (Einzelabfrage) wird aktuell nirgends
+// aufgerufen, aber für Konsistenz mit apiGetAll ebenfalls angepasst.
 const apiGet = async (collection) => {
   const res = await fetch(`${API}?collection=${collection}`);
   const data = await res.json();
   if (!data.ok) throw new Error(data.error);
-  return data.data;
+  return { items: data.data, version: data.version };
 };
 
 // Holt alle 5 Collections in EINEM Request statt 5 einzelnen Aufrufen.
 // Wichtig für das Google-Sheets-Lese-Kontingent: Bei mehreren gleichzeitig
 // geöffneten Sessions (bis zu 21 Mitarbeitende) summierten sich die
 // bisherigen 5 Einzelabfragen pro Poll schnell zu "Quota exceeded".
+//
+// Liefert jetzt zusätzlich "versions" mit (eine Zahl pro Collection). Das
+// Frontend merkt sich diese Stände in versionsRef und schickt sie bei jedem
+// Schreibvorgang als expectedVersion mit — Grundlage der serverseitigen
+// Konflikterkennung in data.js (siehe Kommentar dort: SCHUTZ 1).
 const apiGetAll = async () => {
   const res = await fetch(`${API}?collection=all`);
   const data = await res.json();
   if (!data.ok) throw new Error(data.error);
-  return data.data; // { news, tools, messages, employees, audit }
+  return { items: data.data, versions: data.versions || {} }; // items: { news, tools, messages, employees, audit }
 };
 
 // Beide Funktionen geben jetzt { ok, status, body } zurück, statt die
 // Server-Antwort zu ignorieren. So kann der Aufrufer (commit()) erkennen,
 // ob der Schreibvorgang wirklich angenommen wurde (z. B. vom serverseitigen
-// Schutz gegen leeres Überschreiben mit 409 abgelehnt) und entsprechend
-// reagieren, statt einen fehlgeschlagenen Schreibvorgang lokal als Erfolg
-// zu behandeln.
-const apiSet = async (collection, payload) => {
+// Schutz gegen leeres Überschreiben oder — neu — einem Versions-Konflikt mit
+// 409 abgelehnt) und entsprechend reagieren, statt einen fehlgeschlagenen
+// Schreibvorgang lokal als Erfolg zu behandeln.
+//
+// expectedVersion: die zuletzt vom Server gesehene Version dieser Collection
+// (aus versionsRef). Wird an data.js durchgereicht, das damit erkennt, ob
+// zwischenzeitlich ein ANDERER Tab/Gerät bereits geschrieben hat (siehe
+// Kommentar dort: SCHUTZ 1 — version_conflict). Optional: Aufrufer, die
+// (noch) keine Version kennen, übergeben undefined — der Server fällt dann
+// auf den alten Leer-Guard zurück.
+const apiSet = async (collection, payload, expectedVersion) => {
   pendingWrites++;
   try {
     const res = await fetch(API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ collection, action: 'set', payload }),
+      body: JSON.stringify({ collection, action: 'set', payload, expectedVersion }),
     });
     let body = null;
     try { body = await res.json(); } catch (e) {}
@@ -204,6 +219,14 @@ const App = () => {
   // geladen wurden. Vorher darf NICHTS ins Sheet geschrieben werden, sonst
   // könnte ein leerer Anfangszustand echte Daten überschreiben.
   const dataLoaded = useRef(false);
+  // Merkt sich pro Collection die zuletzt vom Server gesehene Version
+  // (siehe apiGetAll/apiSet und SCHUTZ 1 in data.js). Bewusst ein Ref statt
+  // State: Der Wert wird nie direkt gerendert, sondern nur von commit()
+  // synchron gelesen und aktualisiert — ein State-Update würde hier nur
+  // unnötige Re-Renders verursachen und könnte durch React-Batching sogar
+  // zu genau der Art von veraltetem Lesen führen, die dieser Mechanismus
+  // eigentlich verhindern soll.
+  const versionsRef = useRef({});
   // Verhindert, dass der Versuch, eine gespeicherte Mitarbeiter-Session
   // wiederherzustellen, bei JEDEM periodischen 20-Sekunden-Reload erneut
   // läuft (der useEffect unten hat ein leeres Dependency-Array, "user" wäre
@@ -216,12 +239,17 @@ const App = () => {
     const loadAll = async () => {
       if (isWriteInProgressOrRecent()) return;
       try {
-        const { news: n, tools: t, messages: m, employees: e, audit: a } = await apiGetAll();
+        const { items, versions } = await apiGetAll();
+        const { news: n, tools: t, messages: m, employees: e, audit: a } = items;
         if (n.length) setNews(n);
         if (t.length) setTools(t); else setTools(DEFAULT_TOOLS);
         if (m.length) setMessages(m);
         if (e.length) setEmployees(e); else setEmployees(EMPLOYEES);
         if (a.length) setAudit(a);
+        // Versionsstände immer übernehmen (auch für leere Collections), damit
+        // commit() beim nächsten Schreibvorgang gegen den aktuellen Server-
+        // Stand prüfen kann — nicht gegen einen veralteten oder fehlenden Wert.
+        versionsRef.current = { ...versionsRef.current, ...versions };
         dataLoaded.current = true;
 
         // Gespeicherte Mitarbeiter-Session wiederherstellen — nur beim
@@ -303,12 +331,21 @@ const App = () => {
   // eine schnelle Folge von Änderungen (oder ein dazwischenfunkender Sync) einen
   // alten Stand ins Sheet zurückschreibt.
   //
-  // Zwei Schutzmechanismen gegen Datenverlust:
+  // Drei Schutzmechanismen gegen Datenverlust:
   // 1. Es wird NIE geschrieben, bevor die Daten mindestens einmal erfolgreich
   //    von den Sheets geladen wurden (sonst könnte der leere Anfangszustand
   //    echte Daten überschreiben).
-  // 2. Ein Schreibvorgang, der eine zuvor gefüllte Collection auf KOMPLETT LEER
-  //    setzen würde, wird blockiert (Schutz vor versehentlichem „alles weg").
+  // 2. Versions-Check (neu): Der Server vergleicht die hier mitgeschickte
+  //    Version (versionsRef) mit seinem aktuellen Stand. Hat zwischenzeitlich
+  //    ein anderer Tab/Gerät auf dieselbe Collection geschrieben, lehnt der
+  //    Server ab, statt die fremde Änderung stillschweigend zu überschreiben
+  //    — das war die Ursache dafür, dass Bearbeiten/Löschen gelegentlich
+  //    fehlschlug oder Änderungen anderer Sitzungen verloren gingen, wenn
+  //    mehrere Admin-Sessions gleichzeitig offen waren.
+  // 3. Ein Schreibvorgang, der eine zuvor gefüllte Collection auf KOMPLETT LEER
+  //    setzen würde, wird zusätzlich blockiert (Schutz vor versehentlichem
+  //    „alles weg", greift auch wenn aus irgendeinem Grund keine Version
+  //    bekannt ist).
   const commit = async (setter, collection, transform) => {
     if (!dataLoaded.current) {
       console.warn('Schreibvorgang blockiert: Daten noch nicht geladen (' + collection + ')');
@@ -323,14 +360,34 @@ const App = () => {
     }
     // Die lokale Anzeige wurde oben bereits optimistisch aktualisiert (next).
     // Jetzt prüfen, ob der Server den Schreibvorgang wirklich angenommen hat.
-    // Falls nicht (z. B. 409 vom serverseitigen Schutz, Netzwerkfehler o. ä.),
-    // wird der lokale Stand zurückgerollt und der Fehler sichtbar gemacht —
-    // statt stumm einen fehlgeschlagenen Vorgang als Erfolg zu zeigen.
-    const result = await apiSet(collection, next);
+    // Falls nicht (z. B. 409 durch Versions-Konflikt oder den Leer-Guard,
+    // Netzwerkfehler o. ä.), wird der lokale Stand zurückgerollt und der
+    // Fehler sichtbar gemacht — statt stumm einen fehlgeschlagenen Vorgang
+    // als Erfolg zu zeigen.
+    const expectedVersion = versionsRef.current[collection];
+    const result = await apiSet(collection, next, expectedVersion);
     if (!result.ok) {
       setter(prevSnapshot);
+      const isVersionConflict = result.body?.error === 'version_conflict';
       const reason = result.body?.message || result.body?.error || ('HTTP ' + result.status);
-      alert('Änderung konnte NICHT gespeichert werden und wurde rückgängig gemacht.\n\nGrund: ' + reason);
+      // Bei einem erkannten Versions-Konflikt bekommt der Nutzer eine klare
+      // Ursache ("eine andere Sitzung hat das inzwischen geändert") und eine
+      // konkrete Handlungsoption (neu laden + erneut versuchen), statt nur
+      // "Grund: version_conflict". Der servergenerierte Text in
+      // result.body.message ist bereits so formuliert; hier wird er nur mit
+      // einer kurzen Kopfzeile eingerahmt, um ihn vom generischen Fall
+      // (z. B. Netzwerkfehler) optisch abzuheben.
+      if (isVersionConflict) {
+        alert('Gleichzeitige Änderung erkannt\n\n' + reason);
+      } else {
+        alert('Änderung konnte NICHT gespeichert werden und wurde rückgängig gemacht.\n\nGrund: ' + reason);
+      }
+    } else if (typeof result.body?.version === 'number') {
+      // Erfolgreich gespeichert: neuen Versionsstand übernehmen, damit der
+      // NÄCHSTE Schreibvorgang aus diesem Tab gegen den aktuellen Stand
+      // prüft, statt sofort wieder in einen (jetzt falschen) Konflikt zu
+      // laufen.
+      versionsRef.current[collection] = result.body.version;
     }
     return result;
   };
