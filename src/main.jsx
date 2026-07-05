@@ -106,6 +106,13 @@ const DEFAULT_TOOLS = [
 
 const API = '/.netlify/functions/data';
 
+// Verhindert, dass der automatische Hintergrund-Sync eine gerade erst
+// gespeicherte Änderung sofort wieder mit veralteten Sheets-Daten überschreibt:
+// Solange ein Schreibvorgang läuft (oder gerade eben lief), setzt der Sync aus.
+let pendingWrites = 0;
+let writeCooldownUntil = 0;
+const isWriteInProgressOrRecent = () => pendingWrites > 0 || Date.now() < writeCooldownUntil;
+
 const apiGet = async (collection) => {
   const res = await fetch(`${API}?collection=${collection}`);
   const data = await res.json();
@@ -114,19 +121,31 @@ const apiGet = async (collection) => {
 };
 
 const apiSet = async (collection, payload) => {
-  await fetch(API, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ collection, action: 'set', payload }),
-  });
+  pendingWrites++;
+  try {
+    await fetch(API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ collection, action: 'set', payload }),
+    });
+  } finally {
+    pendingWrites--;
+    writeCooldownUntil = Date.now() + 3000;
+  }
 };
 
 const apiAppend = async (collection, payload) => {
-  await fetch(API, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ collection, action: 'append', payload }),
-  });
+  pendingWrites++;
+  try {
+    await fetch(API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ collection, action: 'append', payload }),
+    });
+  } finally {
+    pendingWrites--;
+    writeCooldownUntil = Date.now() + 3000;
+  }
 };
 
 const App = () => {
@@ -143,6 +162,7 @@ const App = () => {
   // und sobald der Tab wieder in den Vordergrund kommt (z. B. nach Tab-Wechsel).
   useEffect(() => {
     const loadAll = async () => {
+      if (isWriteInProgressOrRecent()) return;
       try {
         const [n, t, m, e, a] = await Promise.all([
           apiGet('news'),
