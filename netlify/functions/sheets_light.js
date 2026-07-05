@@ -51,6 +51,21 @@ const sheetsClear = async (sheet) => {
   await fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
 };
 
+// Leert nur einen Zeilenbereich (z. B. die überschüssigen alten Zeilen NACH
+// einem Update), statt das ganze Blatt. Wichtig für Atomizität: Wenn wir
+// zuerst die neuen Daten schreiben und ERST DANACH die alten Überhang-Zeilen
+// leeren, gibt es nie einen Moment, in dem ein gleichzeitiger Leser (z. B.
+// ein anderer Client, der gerade lädt) eine leere oder unvollständige Sicht
+// auf die Collection bekommt. Vorher (clear-then-write) gab es genau dieses
+// Zeitfenster — und ein Leser, der zufällig genau dann pollte, übernahm den
+// unvollständigen Stand lokal als "aktuell".
+const sheetsClearRange = async (sheet, fromRow, toRow = 10000) => {
+  if (fromRow > toRow) return;
+  const token = await getToken();
+  const url = `${BASE}/${SHEET_ID}/values/${encodeURIComponent(sheet + '!A' + fromRow + ':Z' + toRow)}:clear`;
+  await fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+};
+
 const sheetsUpdate = async (sheet, values) => {
   const token = await getToken();
   const url = `${BASE}/${SHEET_ID}/values/${encodeURIComponent(sheet + '!A1')}?valueInputOption=RAW`;
@@ -75,4 +90,4 @@ const sheetsAppend = async (sheet, values) => {
   if (data.error) throw new Error(data.error.message);
 };
 
-module.exports = { sheetsGet, sheetsBatchGetAll, sheetsClear, sheetsUpdate, sheetsAppend };
+module.exports = { sheetsGet, sheetsBatchGetAll, sheetsClear, sheetsClearRange, sheetsUpdate, sheetsAppend };
