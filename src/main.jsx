@@ -136,6 +136,17 @@ const apiGet = async (collection) => {
   return data.data;
 };
 
+// Holt alle 5 Collections in EINEM Request statt 5 einzelnen Aufrufen.
+// Wichtig für das Google-Sheets-Lese-Kontingent: Bei mehreren gleichzeitig
+// geöffneten Sessions (bis zu 21 Mitarbeitende) summierten sich die
+// bisherigen 5 Einzelabfragen pro Poll schnell zu "Quota exceeded".
+const apiGetAll = async () => {
+  const res = await fetch(`${API}?collection=all`);
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.error);
+  return data.data; // { news, tools, messages, employees, audit }
+};
+
 // Beide Funktionen geben jetzt { ok, status, body } zurück, statt die
 // Server-Antwort zu ignorieren. So kann der Aufrufer (commit()) erkennen,
 // ob der Schreibvorgang wirklich angenommen wurde (z. B. vom serverseitigen
@@ -205,13 +216,7 @@ const App = () => {
     const loadAll = async () => {
       if (isWriteInProgressOrRecent()) return;
       try {
-        const [n, t, m, e, a] = await Promise.all([
-          apiGet('news'),
-          apiGet('tools'),
-          apiGet('messages'),
-          apiGet('employees'),
-          apiGet('audit'),
-        ]);
+        const { news: n, tools: t, messages: m, employees: e, audit: a } = await apiGetAll();
         if (n.length) setNews(n);
         if (t.length) setTools(t); else setTools(DEFAULT_TOOLS);
         if (m.length) setMessages(m);
