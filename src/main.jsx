@@ -139,9 +139,10 @@ const App = () => {
   const [messages, setMessages] = useState([]);
   const [audit, setAudit] = useState([]);
 
-  // Initial load from Sheets
+  // Laden von den Sheets — beim Start, danach automatisch alle 20 Sekunden
+  // und sobald der Tab wieder in den Vordergrund kommt (z. B. nach Tab-Wechsel).
   useEffect(() => {
-    const init = async () => {
+    const loadAll = async () => {
       try {
         const [n, t, m, e, a] = await Promise.all([
           apiGet('news'),
@@ -156,12 +157,20 @@ const App = () => {
         if (e.length) setEmployees(e); else setEmployees(EMPLOYEES);
         if (a.length) setAudit(a);
       } catch (err) {
-        console.warn('Sheets nicht erreichbar, starte leer:', err.message);
-      } finally {
-        setLoading(false);
+        console.warn('Sheets nicht erreichbar:', err.message);
       }
     };
-    init();
+
+    loadAll().finally(() => setLoading(false));
+
+    const interval = setInterval(loadAll, 20000);
+    const onVisible = () => { if (document.visibilityState === 'visible') loadAll(); };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, []);
 
   const logA = async (action, who, detail) => {
