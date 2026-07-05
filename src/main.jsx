@@ -322,6 +322,35 @@ const App = () => {
     await logA('Dialog wieder geöffnet', user.name, '#' + id);
   };
 
+  // Like: leichte Reaktion, für alle Empfänger derselben Nachricht sichtbar.
+  const toggleLike = async id => {
+    await commit(setMessages, 'messages', prev => prev.map(m => {
+      if (m.id !== id) return m;
+      const likes = m.likes || [];
+      const already = likes.some(l => l.id === user.id);
+      return { ...m, likes: already ? likes.filter(l => l.id !== user.id) : [...likes, { id: user.id, name: user.name }] };
+    }));
+  };
+
+  // Kommentar: im Unterschied zur privaten "Antwort" für ALLE Empfänger
+  // derselben Nachricht sichtbar (z. B. alle Mitglieder einer Gruppe).
+  const addComment = async (id, text) => {
+    const comment = { from: user.name, fromId: user.id, text, ts: new Date().toLocaleString('de-DE') };
+    await commit(setMessages, 'messages', prev => prev.map(m => m.id === id ? { ...m, comments: [...(m.comments || []), comment] } : m));
+    await logA('Kommentar', user.name, 'zu #' + id);
+  };
+
+  // Termin-Bestätigung: wer zugesagt hat, sieht nur die Verwaltung (Admin-Ansicht).
+  // Der einzelne Mitarbeiter sieht ausschließlich seinen eigenen Status.
+  const toggleConfirm = async id => {
+    await commit(setMessages, 'messages', prev => prev.map(m => {
+      if (m.id !== id) return m;
+      const confirmedBy = m.confirmedBy || [];
+      const already = confirmedBy.some(c => c.id === user.id);
+      return { ...m, confirmedBy: already ? confirmedBy.filter(c => c.id !== user.id) : [...confirmedBy, { id: user.id, name: user.name, ts: new Date().toLocaleString('de-DE') }] };
+    }));
+  };
+
   const resetPin = async id => {
     await commit(setEmployees, 'employees', prev => prev.map(e => e.id === id ? { ...e, pin: null, pinSet: false } : e));
     await logA('PIN zurückgesetzt', user.name, id);
@@ -339,7 +368,7 @@ const App = () => {
   );
 
   if (page === 'login') return <Login employees={employees} onPinSetup={pinSetup} onEmployeeLogin={employeeLogin} onAdminLogin={adminLogin} />;
-  if (page === 'employee' && user) return <Employee user={user} news={news} tools={tools} messages={messages.filter(m => forMe(m, user))} onMarkRead={markRead} onReply={addReply} onLogout={logout} />;
+  if (page === 'employee' && user) return <Employee user={user} news={news} tools={tools} messages={messages.filter(m => forMe(m, user))} onMarkRead={markRead} onReply={addReply} onToggleLike={toggleLike} onComment={addComment} onToggleConfirm={toggleConfirm} onLogout={logout} />;
   if (page === 'admin' && user?.isAdmin) return <Admin user={user} news={news} tools={tools} messages={messages} employees={employees} audit={audit} onAddNews={addNews} onUpdateNews={updateNews} onDelNews={delNews} onAddTool={addTool} onUpdateTool={updateTool} onDelTool={delTool} onSend={sendMessage} onReply={addReply} onCloseDialog={closeDialog} onReopenDialog={reopenDialog} onResetPin={resetPin} onLogout={logout} />;
   return null;
 };
@@ -478,7 +507,7 @@ const Login = ({ employees, onPinSetup, onEmployeeLogin, onAdminLogin }) => {
   );
 };
 
-const Employee = ({ user, news, tools, messages, onMarkRead, onReply, onLogout }) => {
+const Employee = ({ user, news, tools, messages, onMarkRead, onReply, onToggleLike, onComment, onToggleConfirm, onLogout }) => {
   const [tab, setTab] = useState('news');
   const initials = user.name.split(' ').map(w => w[0]).join('').slice(0, 2);
   const unread = messages.filter(m => !m.readBy.some(r => r.id === user.id)).length;
@@ -504,7 +533,7 @@ const Employee = ({ user, news, tools, messages, onMarkRead, onReply, onLogout }
       <div style={{ flex: 1, maxWidth: 1100, margin: '0 auto', width: '100%', padding: '1.75rem 1.5rem', boxSizing: 'border-box' }}>
         {tab === 'news' && <NewsFeed news={news} />}
         {tab === 'tools' && <ToolsList tools={tools} />}
-        {tab === 'postfach' && <Postfach user={user} messages={messages} onMarkRead={onMarkRead} onReply={onReply} />}
+        {tab === 'postfach' && <Postfach user={user} messages={messages} onMarkRead={onMarkRead} onReply={onReply} onToggleLike={onToggleLike} onComment={onComment} onToggleConfirm={onToggleConfirm} />}
       </div>
     </div>
   );
@@ -591,19 +620,22 @@ const ToolsList = ({ tools }) => (
   </div>
 );
 
-const Postfach = ({ user, messages, onMarkRead, onReply }) => (
+const Postfach = ({ user, messages, onMarkRead, onReply, onToggleLike, onComment, onToggleConfirm }) => (
   <div>
     <Label>Mein persönlicher Bereich</Label>
     <p style={{ fontSize: 12, color: T.muted, margin: '-0.4rem 0 1.2rem', lineHeight: 1.6 }}>Hier erhältst du persönliche Nachrichten und Dokumente von der Verwaltung. Du kannst direkt antworten und Dateien zurücksenden. Alle Vorgänge werden protokolliert.</p>
     {messages.length === 0 && <Empty text="Noch keine Nachrichten in deinem Bereich." />}
-    {messages.map(m => <MessageThread key={m.id} m={m} user={user} unread={!m.readBy.some(r => r.id === user.id)} onOpen={() => onMarkRead(m.id)} onReply={onReply} />)}
+    {messages.map(m => <MessageThread key={m.id} m={m} user={user} unread={!m.readBy.some(r => r.id === user.id)} onOpen={() => onMarkRead(m.id)} onReply={onReply} onToggleLike={onToggleLike} onComment={onComment} onToggleConfirm={onToggleConfirm} />)}
   </div>
 );
 
-const MessageThread = ({ m, user, unread, onOpen, onReply }) => {
+const MessageThread = ({ m, user, unread, onOpen, onReply, onToggleLike, onComment, onToggleConfirm }) => {
   const [open, setOpen] = useState(false);
   const [reply, setReply] = useState('');
   const [pendingFiles, setPendingFiles] = useState([]);
+  const [comment, setComment] = useState('');
+  const iLiked = (m.likes || []).some(l => l.id === user.id);
+  const iConfirmed = (m.confirmedBy || []).some(c => c.id === user.id);
   return (
     <div style={{ background: T.surface, border: '0.5px solid ' + (unread ? T.mauveSoft : T.line), borderRadius: 10, overflow: 'hidden', marginBottom: 9 }}>
       <div onClick={() => setOpen(o => { if (!o) onOpen(); return !o; })} style={{ padding: '13px 15px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 13 }}>
@@ -623,7 +655,34 @@ const MessageThread = ({ m, user, unread, onOpen, onReply }) => {
           )}
           <p style={{ margin: '0 0 8px' }}>{m.text}</p>
           {m.link && <p style={{ margin: '0 0 10px' }}><a href={m.link} target="_blank" rel="noopener noreferrer" style={{ color: T.mauve, fontSize: 13, fontWeight: 500 }}>→ {m.linkLabel || m.link}</a></p>}
+          {m.eventDate && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, margin: '0 0 10px', padding: '10px 12px', background: T.chip, borderRadius: 8 }}>
+              <span style={{ fontSize: 13, color: T.ink }}>📅 {m.eventDate}</span>
+              <button onClick={() => onToggleConfirm(m.id)} style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 500, cursor: 'pointer', border: '1px solid ' + (iConfirmed ? T.green : T.line), background: iConfirmed ? T.green : T.surface, color: iConfirmed ? '#fff' : T.muted }}>{iConfirmed ? '✓ Zugesagt' : 'Bestätigen'}</button>
+            </div>
+          )}
+          <div style={{ margin: '0 0 10px' }}>
+            <button onClick={() => onToggleLike(m.id)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 13px', borderRadius: 20, fontSize: 12, fontWeight: 500, cursor: 'pointer', border: '1px solid ' + (iLiked ? T.mauve : T.line), background: iLiked ? T.mauve : T.surface, color: iLiked ? '#fff' : T.muted }}>{iLiked ? '♥' : '♡'} Gefällt mir{m.likes?.length ? ' · ' + m.likes.length : ''}</button>
+          </div>
           {attachmentsOf(m).map((a, i) => <FileChip key={i} name={a.name || a} url={a.url || null} />)}
+          <div style={{ marginTop: 14, borderTop: '1px solid ' + T.lineSoft, paddingTop: 12 }}>
+            <p style={{ margin: '0 0 8px', fontSize: 11, color: T.faint, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Kommentare{m.comments?.length ? ' (' + m.comments.length + ')' : ''}</p>
+            {m.comments && m.comments.length > 0 && (
+              <div style={{ marginBottom: 10 }}>
+                {m.comments.map((c, i) => (
+                  <div key={i} style={{ marginBottom: 8 }}>
+                    <p style={{ margin: 0, fontSize: 11, color: T.faint, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{c.from} · {c.ts}</p>
+                    <p style={{ margin: '2px 0 0' }}>{c.text}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+            <textarea value={comment} onChange={e => setComment(e.target.value)} placeholder="Kommentar schreiben …" style={{ width: '100%', minHeight: 44, padding: 10, border: '1px solid ' + T.line, borderRadius: 8, fontSize: 13, boxSizing: 'border-box', fontFamily: 'inherit', color: T.ink, background: T.bg }} />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 6, flexWrap: 'wrap', gap: 8 }}>
+              <span style={{ fontSize: 11, color: T.faint }}>Hinweis: Dein Kommentar ist für alle sichtbar, die diese Nachricht erhalten haben.</span>
+              <button onClick={() => { if (!comment.trim()) return; onComment(m.id, comment); setComment(''); }} style={{ padding: '7px 15px', border: 'none', borderRadius: 8, background: T.green, color: '#fff', fontSize: 12, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap' }}>Kommentieren</button>
+            </div>
+          </div>
           {m.replies && m.replies.length > 0 && (
             <div style={{ marginTop: 14, borderTop: '1px solid ' + T.lineSoft, paddingTop: 12 }}>
               {m.replies.map((r, i) => (
@@ -894,18 +953,19 @@ const AdminPost = ({ employees, messages, onSend, onReply, onCloseDialog, onReop
   const [pendingAttachments, setPendingAttachments] = useState([]);
   const [photos, setPhotos] = useState([]);
   const [link, setLink] = useState(''); const [linkLabel, setLinkLabel] = useState('');
+  const [eventDate, setEventDate] = useState('');
   const [confirmPayload, setConfirmPayload] = useState(null);
   const toggle = (arr, set, v) => set(arr.includes(v) ? arr.filter(x => x !== v) : [...arr, v]);
   const requestSend = () => {
     if (!title || !text) return alert('Betreff und Text nötig');
     if (groups.length === 0 && inds.length === 0) return alert('Mindestens einen Empfänger wählen');
     const recipientNames = [...groups, ...inds.map(id => employees.find(e => e.id === id)?.name)].filter(Boolean);
-    setConfirmPayload({ title, text, attachments: pendingAttachments, photos, link: link || null, linkLabel: linkLabel || null, toGroups: groups, toIndividuals: inds, recipientNames });
+    setConfirmPayload({ title, text, attachments: pendingAttachments, photos, link: link || null, linkLabel: linkLabel || null, eventDate: eventDate || null, toGroups: groups, toIndividuals: inds, recipientNames });
   };
   const confirmSend = () => {
-    onSend({ title: confirmPayload.title, text: confirmPayload.text, attachments: confirmPayload.attachments, photos: confirmPayload.photos, link: confirmPayload.link, linkLabel: confirmPayload.linkLabel, toGroups: confirmPayload.toGroups, toIndividuals: confirmPayload.toIndividuals });
+    onSend({ title: confirmPayload.title, text: confirmPayload.text, attachments: confirmPayload.attachments, photos: confirmPayload.photos, link: confirmPayload.link, linkLabel: confirmPayload.linkLabel, eventDate: confirmPayload.eventDate, toGroups: confirmPayload.toGroups, toIndividuals: confirmPayload.toIndividuals });
     setConfirmPayload(null);
-    setTitle(''); setText(''); setPendingAttachments([]); setPhotos([]); setLink(''); setLinkLabel(''); setGroups([]); setInds([]);
+    setTitle(''); setText(''); setPendingAttachments([]); setPhotos([]); setLink(''); setLinkLabel(''); setEventDate(''); setGroups([]); setInds([]);
   };
   return (
     <div>
@@ -930,6 +990,8 @@ const AdminPost = ({ employees, messages, onSend, onReply, onCloseDialog, onReop
           <input style={{ ...fieldS, marginBottom: 0 }} placeholder="Link (z. B. Terminabstimmung, https://…)" value={link} onChange={e => setLink(e.target.value)} />
           <input style={{ ...fieldS, marginBottom: 0 }} placeholder="Link-Text (optional)" value={linkLabel} onChange={e => setLinkLabel(e.target.value)} />
         </div>
+        <p style={subLabel}>Termin (optional) — Empfänger können direkt zusagen, das Ergebnis siehst nur du</p>
+        <input style={fieldS} placeholder="z. B. Freitag, 18 Uhr, Trattoria Da Mario" value={eventDate} onChange={e => setEventDate(e.target.value)} />
         <p style={subLabel}>Anhang (PDF, Word, Excel …)</p>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4, flexWrap: 'wrap' }}>
           {pendingAttachments.length < MAX_ATTACHMENTS && (
@@ -970,6 +1032,7 @@ const AdminPost = ({ employees, messages, onSend, onReply, onCloseDialog, onReop
               Geht an: <strong style={{ color: T.ink }}>{confirmPayload.recipientNames.join(', ')}</strong>
               {confirmPayload.attachments.length > 0 && <><br />{confirmPayload.attachments.length} Anhang{confirmPayload.attachments.length > 1 ? 'änge' : ''}</>}
               {confirmPayload.link && <><br />Link: {confirmPayload.linkLabel || confirmPayload.link}</>}
+              {confirmPayload.eventDate && <><br />📅 {confirmPayload.eventDate}</>}
             </p>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <button onClick={() => setConfirmPayload(null)} style={{ padding: '9px 16px', border: '1px solid ' + T.line, borderRadius: 8, background: 'none', color: T.muted, fontSize: 13, cursor: 'pointer' }}>Abbrechen</button>
@@ -996,7 +1059,11 @@ const AdminMessageThread = ({ m, employees, onReply, onCloseDialog, onReopenDial
           <p style={{ margin: '2px 0 0', fontSize: 11, color: T.faint, letterSpacing: '0.04em', textTransform: 'uppercase' }}>an {recipientNames} · {m.created}</p>
           {m.readBy.length > 0 && <p style={{ margin: '4px 0 0', fontSize: 11, color: T.greenSoft }}>gelesen von: {m.readBy.map(r => r.name).join(', ')}</p>}
         </div>
-        <span style={{ fontSize: 11, color: T.faint, whiteSpace: 'nowrap', textAlign: 'right', lineHeight: 1.5 }}>{m.readBy.length} gelesen{m.replies?.length ? <><br />{m.replies.length} Antworten</> : null}</span>
+        <span style={{ fontSize: 11, color: T.faint, whiteSpace: 'nowrap', textAlign: 'right', lineHeight: 1.5 }}>
+          {m.readBy.length} gelesen{m.replies?.length ? <><br />{m.replies.length} Antworten</> : null}
+          {m.likes?.length ? <><br />♥ {m.likes.length}</> : null}
+          {m.eventDate ? <><br />{(m.confirmedBy || []).length} Zusagen</> : null}
+        </span>
         <span style={{ color: '#c4bfb2', fontSize: 12 }}>{open ? '▴' : '▾'}</span>
       </div>
       {open && (
@@ -1008,7 +1075,30 @@ const AdminMessageThread = ({ m, employees, onReply, onCloseDialog, onReopenDial
           )}
           <p style={{ margin: '0 0 8px' }}>{m.text}</p>
           {m.link && <p style={{ margin: '0 0 10px' }}><a href={m.link} target="_blank" rel="noopener noreferrer" style={{ color: T.mauve, fontSize: 13, fontWeight: 500 }}>→ {m.linkLabel || m.link}</a></p>}
+          {m.eventDate && (
+            <div style={{ margin: '0 0 10px', padding: '10px 12px', background: T.chip, borderRadius: 8 }}>
+              <p style={{ margin: '0 0 4px', fontSize: 13, color: T.ink }}>📅 {m.eventDate}</p>
+              <p style={{ margin: 0, fontSize: 11, color: T.faint, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Nur für dich sichtbar</p>
+              {(m.confirmedBy && m.confirmedBy.length > 0)
+                ? <p style={{ margin: '4px 0 0', fontSize: 13, color: T.greenSoft }}>✓ Zugesagt: {m.confirmedBy.map(c => c.name).join(', ')}</p>
+                : <p style={{ margin: '4px 0 0', fontSize: 13, color: T.faint }}>Noch keine Zusagen.</p>}
+            </div>
+          )}
+          {m.likes && m.likes.length > 0 && (
+            <p style={{ margin: '0 0 10px', fontSize: 13, color: T.mauve }}>♥ Gefällt {m.likes.map(l => l.name).join(', ')}</p>
+          )}
           {attachmentsOf(m).map((a, i) => <FileChip key={i} name={a.name || a} url={a.url || null} />)}
+          {m.comments && m.comments.length > 0 && (
+            <div style={{ marginTop: 10, borderTop: '1px solid ' + T.lineSoft, paddingTop: 10 }}>
+              <p style={{ margin: '0 0 8px', fontSize: 11, color: T.faint, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Kommentare ({m.comments.length})</p>
+              {m.comments.map((c, i) => (
+                <div key={i} style={{ marginBottom: 8 }}>
+                  <p style={{ margin: 0, fontSize: 11, color: T.faint, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{c.from} · {c.ts}</p>
+                  <p style={{ margin: '2px 0 0' }}>{c.text}</p>
+                </div>
+              ))}
+            </div>
+          )}
           {m.replies && m.replies.length > 0 && (
             <div style={{ marginTop: 10, borderTop: '1px solid ' + T.lineSoft, paddingTop: 10 }}>
               {m.replies.map((r, i) => (
