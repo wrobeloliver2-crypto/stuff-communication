@@ -90,4 +90,80 @@ const sheetsAppend = async (sheet, values) => {
   if (data.error) throw new Error(data.error.message);
 };
 
-module.exports = { sheetsGet, sheetsBatchGetAll, sheetsClear, sheetsClearRange, sheetsUpdate, sheetsAppend };
+// --- Versionierung pro Collection (Optimistic Concurrency Control) ---
+//
+// Grund: data.js konnte bisher nicht erkennen, ob zwischen dem Laden der
+// Daten im Client und dem Speichern ein ANDERER Schreibvorgang auf dieselbe
+// Collection dazwischengekommen ist (z. B. zwei gleichzeitig offene
+// Admin-Tabs). Der alte Schutz prüfte nur "wird die Collection komplett
+// leer" — das erkennt weder einen "Lost Update" (ein Tab überschreibt die
+// Änderung eines anderen Tabs mit einem veralteten Stand) noch erklärt es
+// dem Server, WARUM ein serverseitig festgestellter Datenstand nicht zum
+// erwarteten passt.
+//
+// Lösung: Eigenes Blatt "_versions" mit einer Zeile pro Collection, Format
+// "<collectionName>:<zahl>". Der Client bekommt bei jedem GET die aktuelle
+// Version mit und muss sie bei jedem "set" mitschicken. Weicht die
+// mitgeschickte Version von der aktuellen ab, wurde die Collection
+// inzwischen von woanders verändert — der Schreibvorgang wird mit einer
+// eindeutigen Fehlermeldung abgelehnt, statt (wie zuvor) den fremden Stand
+// stillschweigend zu überschreiben oder einen generischen 409 zu werfen.
+//
+// Das "_versions"-Blatt muss VOR der ersten Nutzung einmalig im Google
+// Sheet als zusätzliches Tabellenblatt angelegt werden (siehe README-Hinweis
+// in data.js). Fehlt es, verhält sich sheetsGetVersion wie Version 0.
+const VERSIONS_SHEET = '_versions';
+
+const sheetsGetVersion = async (collection) => {
+  try {
+    const rows = await sheetsGet(VERSIONS_SHEET, 'A1:A200');
+    for (const row of rows) {
+      const raw = row[0] || '';
+      const idx = raw.lastIndexOf(':');
+      if (idx === -1) continue;
+      const name = raw.slice(0, idx);
+      if (name === collection) {
+        const n = parseInt(raw.slice(idx + 1), 10);
+        return Number.isFinite(n) ? n : 0;
+      }
+    }
+    return 0; // Collection noch nie versioniert -> Startversion 0
+  } catch (err) {
+    // "_versions"-Blatt existiert noch nicht o.ä. -> nicht hart fehlschlagen,
+    // sondern wie Version 0 behandeln. Sobald das Blatt angelegt wird, greift
+    // die Versionierung normal.
+    console.warn('sheetsGetVersion: Fallback auf 0 (' + err.message + ')');
+    return 0;
+  }
+};
+
+// Schreibt die neue Versionsnummer für eine Collection. Liest dafür das
+// gesamte "_versions"-Blatt, ersetzt/ergänzt die passende Zeile und schreibt
+// das Blatt komplett neu (es hat nur eine Handvoll Zeilen, das ist
+// unkritisch teuer). Gibt die Version zurück, die tatsächlich geschrieben
+// wurde.
+const sheetsSetVersion = async (collection, newVersion) => {
+  const rows = await sheetsGet(VERSIONS_SHEET, 'A1:A200');
+  const entries = new Map();
+  for (const row of rows) {
+    const raw = row[0] || '';
+    const idx = raw.lastIndexOf(':');
+    if (idx === -1) continue;
+    entries.set(raw.slice(0, idx), raw.slice(idx + 1));
+  }
+  entries.set(collection, String(newVersion));
+  const values = Array.from(entries.entries()).map(([name, v]) => [name + ':' + v]);
+  await sheetsUpdate(VERSIONS_SHEET, values);
+  return newVersion;
+};
+
+module.exports = {
+  sheetsGet,
+  sheetsBatchGetAll,
+  sheetsClear,
+  sheetsClearRange,
+  sheetsUpdate,
+  sheetsAppend,
+  sheetsGetVersion,
+  sheetsSetVersion,
+};
