@@ -157,6 +157,10 @@ const App = () => {
   const [tools, setTools] = useState(DEFAULT_TOOLS);
   const [messages, setMessages] = useState([]);
   const [audit, setAudit] = useState([]);
+  // Wird true, sobald die Daten mindestens einmal erfolgreich von den Sheets
+  // geladen wurden. Vorher darf NICHTS ins Sheet geschrieben werden, sonst
+  // könnte ein leerer Anfangszustand echte Daten überschreiben.
+  const dataLoaded = useRef(false);
 
   // Laden von den Sheets — beim Start, danach automatisch alle 20 Sekunden
   // und sobald der Tab wieder in den Vordergrund kommt (z. B. nach Tab-Wechsel).
@@ -176,6 +180,7 @@ const App = () => {
         if (m.length) setMessages(m);
         if (e.length) setEmployees(e); else setEmployees(EMPLOYEES);
         if (a.length) setAudit(a);
+        dataLoaded.current = true;
       } catch (err) {
         console.warn('Sheets nicht erreichbar:', err.message);
       }
@@ -235,9 +240,25 @@ const App = () => {
   // Form), nie auf Basis einer veralteten Closure-Kopie. Das verhindert, dass
   // eine schnelle Folge von Änderungen (oder ein dazwischenfunkender Sync) einen
   // alten Stand ins Sheet zurückschreibt.
+  //
+  // Zwei Schutzmechanismen gegen Datenverlust:
+  // 1. Es wird NIE geschrieben, bevor die Daten mindestens einmal erfolgreich
+  //    von den Sheets geladen wurden (sonst könnte der leere Anfangszustand
+  //    echte Daten überschreiben).
+  // 2. Ein Schreibvorgang, der eine zuvor gefüllte Collection auf KOMPLETT LEER
+  //    setzen würde, wird blockiert (Schutz vor versehentlichem „alles weg").
   const commit = (setter, collection, transform) => {
-    let next;
-    setter(prev => { next = transform(prev); return next; });
+    if (!dataLoaded.current) {
+      console.warn('Schreibvorgang blockiert: Daten noch nicht geladen (' + collection + ')');
+      return Promise.resolve();
+    }
+    let prevSnapshot, next;
+    setter(prev => { prevSnapshot = prev; next = transform(prev); return next; });
+    if ((!next || next.length === 0) && prevSnapshot && prevSnapshot.length > 1) {
+      console.warn('Schreibvorgang blockiert: würde ' + collection + ' komplett leeren (' + prevSnapshot.length + ' Einträge)');
+      setter(prevSnapshot); // lokalen State zurücksetzen
+      return Promise.resolve();
+    }
     return apiSet(collection, next);
   };
 
