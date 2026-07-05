@@ -373,7 +373,8 @@ const App = () => {
   return null;
 };
 
-const forMe = (m, u) => m.toIndividuals.includes(u.id) || m.toGroups.includes(u.role);
+const ALL_GROUP = 'Alle';
+const forMe = (m, u) => m.toIndividuals.includes(u.id) || m.toGroups.includes(u.role) || m.toGroups.includes(ALL_GROUP);
 
 const FirmDot = ({ firm }) => {
   const f = FIRMS[firm] || FIRMS.beide;
@@ -1007,7 +1008,17 @@ const AdminPost = ({ employees, messages, onSend, onReply, onCloseDialog, onReop
         {pendingAttachments.length >= MAX_ATTACHMENTS && <p style={{ fontSize: 11, color: T.faint, margin: '0 0 8px' }}>Maximal {MAX_ATTACHMENTS} Dateien pro Nachricht.</p>}
         <p style={subLabel}>An Gruppen</p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
-          {GROUPS.map(g => <button key={g} onClick={() => toggle(groups, setGroups, g)} style={{ padding: '7px 13px', borderRadius: 20, fontSize: 12, cursor: 'pointer', border: '1px solid ' + (groups.includes(g) ? T.mauve : T.line), background: groups.includes(g) ? T.mauve : T.surface, color: groups.includes(g) ? '#fff' : T.muted }}>{g}</button>)}
+          <button
+            onClick={() => setGroups(g => g.includes(ALL_GROUP) ? [] : [ALL_GROUP])}
+            style={{ padding: '7px 13px', borderRadius: 20, fontSize: 12, fontWeight: 500, cursor: 'pointer', border: '1px solid ' + (groups.includes(ALL_GROUP) ? T.ink : T.line), background: groups.includes(ALL_GROUP) ? T.ink : T.surface, color: groups.includes(ALL_GROUP) ? '#fff' : T.muted }}
+          >Alle (beide Firmen)</button>
+          {GROUPS.map(g => (
+            <button
+              key={g}
+              onClick={() => setGroups(prev => { const specific = prev.filter(x => x !== ALL_GROUP); return specific.includes(g) ? specific.filter(x => x !== g) : [...specific, g]; })}
+              style={{ padding: '7px 13px', borderRadius: 20, fontSize: 12, cursor: 'pointer', border: '1px solid ' + (groups.includes(g) ? T.mauve : T.line), background: groups.includes(g) ? T.mauve : T.surface, color: groups.includes(g) ? '#fff' : T.muted }}
+            >{g}</button>
+          ))}
         </div>
         <p style={subLabel}>An einzelne Personen</p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
