@@ -421,6 +421,7 @@ const backfillMissingIds = (items) => {
     // diesen Pfad bei JEDEM Laden deterministisch).
     const prevSnapshot = dataRef.current[collection];
     const next = transform(prevSnapshot);
+    if (next === prevSnapshot) return; // No-Op (z. B. Verschieben am Listenrand) — nichts zu schreiben
     if (!Array.isArray(next)) {
       console.error('Schreibvorgang blockiert: transform lieferte kein Array (' + collection + ')');
       return;
@@ -498,6 +499,29 @@ const backfillMissingIds = (items) => {
   const delNews = async id => {
     await commit(setNews, 'news', prev => prev.map(e => e.id === id ? { ...e, deleted: true, deletedAt: new Date().toLocaleString('de-DE') } : e));
     await logA('News gelöscht', user.name, '#' + id);
+  };
+
+  // Verschiebt einen News-Eintrag in der Anzeige-Reihenfolge nach oben (-1)
+  // oder unten (+1). Die Anzeige-Reihenfolge IST die Array-Reihenfolge im
+  // Sheet — verschieben heißt also: mit dem vorherigen/nächsten SICHTBAREN
+  // Eintrag die Plätze tauschen. Soft-gelöschte Einträge liegen unsichtbar
+  // dazwischen und werden beim Suchen des Tauschpartners übersprungen,
+  // bleiben aber selbst an ihrer Position. Array-Länge und -Inhalt bleiben
+  // bis auf die zwei getauschten Positionen unverändert — alle
+  // Schutzmechanismen (Leer-Guard, Versions-Check) greifen normal. Am
+  // Listenrand ist der Aufruf ein No-Op (commit erkennt die unveränderte
+  // Referenz und schreibt nichts).
+  const moveNews = async (id, dir) => {
+    await commit(setNews, 'news', prev => {
+      const from = prev.findIndex(e => e.id === id);
+      if (from === -1) return prev;
+      let to = from + dir;
+      while (to >= 0 && to < prev.length && prev[to].deleted) to += dir;
+      if (to < 0 || to >= prev.length) return prev;
+      const next = [...prev];
+      [next[from], next[to]] = [next[to], next[from]];
+      return next;
+    });
   };
 
   const addTool = async t => {
@@ -591,7 +615,7 @@ const backfillMissingIds = (items) => {
 
   if (page === 'login') return <Login employees={employees} onPinSetup={pinSetup} onEmployeeLogin={employeeLogin} onAdminLogin={adminLogin} />;
   if (page === 'employee' && user) return <Employee user={user} news={news} tools={tools} messages={messages.filter(m => forMe(m, user))} onMarkRead={markRead} onReply={addReply} onToggleLike={toggleLike} onComment={addComment} onToggleConfirm={toggleConfirm} onLogout={logout} />;
-  if (page === 'admin' && user?.isAdmin) return <Admin user={user} news={news} tools={tools} messages={messages} employees={employees} audit={audit} onAddNews={addNews} onUpdateNews={updateNews} onDelNews={delNews} onAddTool={addTool} onUpdateTool={updateTool} onDelTool={delTool} onSend={sendMessage} onReply={addReply} onCloseDialog={closeDialog} onReopenDialog={reopenDialog} onResetPin={resetPin} onLogout={logout} />;
+  if (page === 'admin' && user?.isAdmin) return <Admin user={user} news={news} tools={tools} messages={messages} employees={employees} audit={audit} onAddNews={addNews} onUpdateNews={updateNews} onDelNews={delNews} onMoveNews={moveNews} onAddTool={addTool} onUpdateTool={updateTool} onDelTool={delTool} onSend={sendMessage} onReply={addReply} onCloseDialog={closeDialog} onReopenDialog={reopenDialog} onResetPin={resetPin} onLogout={logout} />;
   return null;
 };
 
@@ -950,7 +974,7 @@ const MessageThread = ({ m, user, unread, onOpen, onReply, onToggleLike, onComme
   );
 };
 
-const Admin = ({ user, news, tools, messages, employees, audit, onAddNews, onUpdateNews, onDelNews, onAddTool, onUpdateTool, onDelTool, onSend, onReply, onCloseDialog, onReopenDialog, onResetPin, onLogout }) => {
+const Admin = ({ user, news, tools, messages, employees, audit, onAddNews, onUpdateNews, onDelNews, onMoveNews, onAddTool, onUpdateTool, onDelTool, onSend, onReply, onCloseDialog, onReopenDialog, onResetPin, onLogout }) => {
   const [tab, setTab] = useState('news');
   return (
     <div style={{ minHeight: '100vh', background: T.bg, fontFamily: 'system-ui,-apple-system,sans-serif', display: 'flex', flexDirection: 'column' }}>
@@ -969,7 +993,7 @@ const Admin = ({ user, news, tools, messages, employees, audit, onAddNews, onUpd
         </div>
       </div>
       <div style={{ flex: 1, maxWidth: 1100, margin: '0 auto', width: '100%', padding: '1.75rem 1.5rem', boxSizing: 'border-box' }}>
-        {tab === 'news' && <AdminNews news={news} onAdd={onAddNews} onUpdate={onUpdateNews} onDel={onDelNews} />}
+        {tab === 'news' && <AdminNews news={news} onAdd={onAddNews} onUpdate={onUpdateNews} onDel={onDelNews} onMove={onMoveNews} />}
         {tab === 'tools' && <AdminTools tools={tools} onAdd={onAddTool} onUpdate={onUpdateTool} onDel={onDelTool} />}
         {tab === 'post' && <AdminPost employees={employees} messages={messages} onSend={onSend} onReply={onReply} onCloseDialog={onCloseDialog} onReopenDialog={onReopenDialog} />}
         {tab === 'team' && <AdminTeam employees={employees} onResetPin={onResetPin} />}
@@ -984,7 +1008,7 @@ const fieldS = { width: '100%', padding: '11px 12px', marginBottom: 12, border: 
 const primaryBtn = { padding: '10px 20px', border: 'none', borderRadius: 8, background: T.mauve, color: '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer' };
 const subLabel = { fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: T.faint, margin: '0.5rem 0 0.6rem' };
 
-const AdminNews = ({ news, onAdd, onUpdate, onDel }) => {
+const AdminNews = ({ news, onAdd, onUpdate, onDel, onMove }) => {
   // Soft-Delete: als "deleted" markierte Einträge bleiben im Sheet (siehe
   // delNews-Kommentar), werden aber auch in der Verwaltungsansicht nicht
   // mehr aufgeführt.
@@ -1072,9 +1096,9 @@ const AdminNews = ({ news, onAdd, onUpdate, onDel }) => {
       <div style={cardS}>
         <Label>Veröffentlicht ({visibleNews.length})</Label>
         {visibleNews.length === 0 && <Empty text="Noch nichts veröffentlicht." />}
-        {visibleNews.map(n => (
-          <div key={n.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 0', borderBottom: '1px solid ' + T.lineSoft }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        {visibleNews.map((n, i) => (
+          <div key={n.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, padding: '11px 0', borderBottom: '1px solid ' + T.lineSoft }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
               <Marker letter={catLetter(n.category)} tone={catTone(n.category)} />
               <div>
                 <p style={{ margin: 0, fontSize: 14, color: T.ink }}>{n.title}</p>
@@ -1084,7 +1108,13 @@ const AdminNews = ({ news, onAdd, onUpdate, onDel }) => {
                 </div>
               </div>
             </div>
-            <div style={{ display: 'flex', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {/* Reihenfolge festlegen: tauscht mit dem vorherigen/nächsten
+                  sichtbaren Eintrag (siehe moveNews in App). Bewusst etwas
+                  größere Touch-Fläche als die Textbuttons, da die Funktion
+                  vor allem mobil genutzt wird. Am Listenrand deaktiviert. */}
+              <button onClick={() => onMove(n.id, -1)} disabled={i === 0} title="Nach oben" style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '6px 0', minWidth: 38, fontSize: 13, color: i === 0 ? T.faint : T.muted, cursor: i === 0 ? 'default' : 'pointer', opacity: i === 0 ? 0.4 : 1 }}>↑</button>
+              <button onClick={() => onMove(n.id, 1)} disabled={i === visibleNews.length - 1} title="Nach unten" style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '6px 0', minWidth: 38, fontSize: 13, color: i === visibleNews.length - 1 ? T.faint : T.muted, cursor: i === visibleNews.length - 1 ? 'default' : 'pointer', opacity: i === visibleNews.length - 1 ? 0.4 : 1 }}>↓</button>
               <button onClick={() => startEdit(n)} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '6px 10px', fontSize: 12, color: T.muted, cursor: 'pointer' }}>Bearbeiten</button>
               <button onClick={() => { if (confirm('News löschen?')) onDel(n.id); }} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '6px 10px', fontSize: 12, color: T.muted, cursor: 'pointer' }}>Löschen</button>
             </div>
