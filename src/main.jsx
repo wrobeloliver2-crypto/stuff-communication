@@ -602,6 +602,29 @@ const backfillMissingIds = (items) => {
     await logA('PIN zurückgesetzt', user.name, id);
   };
 
+  // Neue Mitarbeitende bekommen eine eindeutige id (Präfix 'emp' + Zeitstempel,
+  // um Kollisionen mit den bestehenden Slug-ids wie 'oliver'/'hanna' sicher
+  // auszuschließen) sowie pin: null / pinSet: false — sie legen ihre PIN wie
+  // alle anderen beim ersten Login selbst fest (siehe pinSetup).
+  const addEmployee = async ({ name, role, company }) => {
+    const entry = { id: 'emp' + Date.now(), name, role, company, pin: null, pinSet: false };
+    await commit(setEmployees, 'employees', prev => [...prev, entry]);
+    await logA('Mitarbeiter angelegt', user.name, name + ' (' + role + ', ' + company + ')');
+  };
+
+  // Hard-Delete (filter statt Soft-Delete): anders als bei News verkürzt das
+  // Team-Array bei einer einzelnen Löschung praktisch nie auf 0 Einträge
+  // (der Leer-Guard in commit()/data.js greift nur bei next.length===0 UND
+  // prevSnapshot.length>1), daher unproblematisch — gleiches Muster wie
+  // delTool. Bestehende Nachrichten/Protokoll-Einträge, die sich auf die
+  // gelöschte id beziehen, bleiben unverändert (nur Referenz auf eine dann
+  // nicht mehr existierende Person).
+  const delEmployee = async id => {
+    const emp = employees.find(e => e.id === id);
+    await commit(setEmployees, 'employees', prev => prev.filter(e => e.id !== id));
+    await logA('Mitarbeiter gelöscht', user.name, (emp?.name || id));
+  };
+
   if (loading) return (
     <div style={{ minHeight: '100vh', background: '#faf8f4', display: 'flex', flexDirection: 'column', fontFamily: 'system-ui,-apple-system,sans-serif' }}>
       <BrandHeader right={<span style={{ fontSize: 11, color: '#a39e92', letterSpacing: '0.14em' }}>INTRANET</span>} />
@@ -615,7 +638,7 @@ const backfillMissingIds = (items) => {
 
   if (page === 'login') return <Login employees={employees} onPinSetup={pinSetup} onEmployeeLogin={employeeLogin} onAdminLogin={adminLogin} />;
   if (page === 'employee' && user) return <Employee user={user} news={news} tools={tools} messages={messages.filter(m => forMe(m, user))} onMarkRead={markRead} onReply={addReply} onToggleLike={toggleLike} onComment={addComment} onToggleConfirm={toggleConfirm} onLogout={logout} />;
-  if (page === 'admin' && user?.isAdmin) return <Admin user={user} news={news} tools={tools} messages={messages} employees={employees} audit={audit} onAddNews={addNews} onUpdateNews={updateNews} onDelNews={delNews} onMoveNews={moveNews} onAddTool={addTool} onUpdateTool={updateTool} onDelTool={delTool} onSend={sendMessage} onReply={addReply} onCloseDialog={closeDialog} onReopenDialog={reopenDialog} onResetPin={resetPin} onLogout={logout} />;
+  if (page === 'admin' && user?.isAdmin) return <Admin user={user} news={news} tools={tools} messages={messages} employees={employees} audit={audit} onAddNews={addNews} onUpdateNews={updateNews} onDelNews={delNews} onMoveNews={moveNews} onAddTool={addTool} onUpdateTool={updateTool} onDelTool={delTool} onSend={sendMessage} onReply={addReply} onCloseDialog={closeDialog} onReopenDialog={reopenDialog} onResetPin={resetPin} onAddEmployee={addEmployee} onDelEmployee={delEmployee} onLogout={logout} />;
   return null;
 };
 
@@ -974,7 +997,7 @@ const MessageThread = ({ m, user, unread, onOpen, onReply, onToggleLike, onComme
   );
 };
 
-const Admin = ({ user, news, tools, messages, employees, audit, onAddNews, onUpdateNews, onDelNews, onMoveNews, onAddTool, onUpdateTool, onDelTool, onSend, onReply, onCloseDialog, onReopenDialog, onResetPin, onLogout }) => {
+const Admin = ({ user, news, tools, messages, employees, audit, onAddNews, onUpdateNews, onDelNews, onMoveNews, onAddTool, onUpdateTool, onDelTool, onSend, onReply, onCloseDialog, onReopenDialog, onResetPin, onAddEmployee, onDelEmployee, onLogout }) => {
   const [tab, setTab] = useState('news');
   return (
     <div style={{ minHeight: '100vh', background: T.bg, fontFamily: 'system-ui,-apple-system,sans-serif', display: 'flex', flexDirection: 'column' }}>
@@ -996,7 +1019,7 @@ const Admin = ({ user, news, tools, messages, employees, audit, onAddNews, onUpd
         {tab === 'news' && <AdminNews news={news} onAdd={onAddNews} onUpdate={onUpdateNews} onDel={onDelNews} onMove={onMoveNews} />}
         {tab === 'tools' && <AdminTools tools={tools} onAdd={onAddTool} onUpdate={onUpdateTool} onDel={onDelTool} />}
         {tab === 'post' && <AdminPost employees={employees} messages={messages} onSend={onSend} onReply={onReply} onCloseDialog={onCloseDialog} onReopenDialog={onReopenDialog} />}
-        {tab === 'team' && <AdminTeam employees={employees} onResetPin={onResetPin} />}
+        {tab === 'team' && <AdminTeam employees={employees} onResetPin={onResetPin} onAddEmployee={onAddEmployee} onDelEmployee={onDelEmployee} />}
         {tab === 'audit' && <AdminAudit audit={audit} />}
       </div>
     </div>
@@ -1414,9 +1437,57 @@ const AdminMessageThread = ({ m, employees, onReply, onCloseDialog, onReopenDial
   );
 };
 
-const AdminTeam = ({ employees, onResetPin }) => (
+const COMPANIES = ['PhysioPro', 'Pilates', 'Beide'];
+
+const AdminTeamAdd = ({ onAdd }) => {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [role, setRole] = useState(GROUPS[0]);
+  const [company, setCompany] = useState(COMPANIES[0]);
+  const [saving, setSaving] = useState(false);
+
+  const reset = () => { setName(''); setRole(GROUPS[0]); setCompany(COMPANIES[0]); };
+
+  const submit = async () => {
+    if (!name.trim()) return;
+    setSaving(true);
+    try {
+      await onAdd({ name: name.trim(), role, company });
+      reset();
+      setOpen(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!open) return (
+    <button onClick={() => setOpen(true)} style={{ ...primaryBtn, marginBottom: '1.2rem' }}>+ Mitarbeiter hinzufügen</button>
+  );
+
+  return (
+    <div style={{ border: '1px solid ' + T.line, borderRadius: 10, padding: '1rem', marginBottom: '1.2rem', background: T.bg }}>
+      <p style={subLabel}>Neue/r Mitarbeiter/in</p>
+      <input value={name} onChange={e => setName(e.target.value)} placeholder="Vor- und Nachname" style={fieldS} />
+      <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
+        <select value={role} onChange={e => setRole(e.target.value)} style={{ ...fieldS, marginBottom: 0, flex: 1 }}>
+          {GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
+        </select>
+        <select value={company} onChange={e => setCompany(e.target.value)} style={{ ...fieldS, marginBottom: 0, flex: 1 }}>
+          {COMPANIES.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button onClick={submit} disabled={saving || !name.trim()} style={{ ...primaryBtn, opacity: saving || !name.trim() ? 0.6 : 1, cursor: saving || !name.trim() ? 'default' : 'pointer' }}>{saving ? 'Wird gespeichert …' : 'Hinzufügen'}</button>
+        <button onClick={() => { reset(); setOpen(false); }} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 8, padding: '10px 16px', fontSize: 13, color: T.muted, cursor: 'pointer' }}>Abbrechen</button>
+      </div>
+    </div>
+  );
+};
+
+const AdminTeam = ({ employees, onResetPin, onAddEmployee, onDelEmployee }) => (
   <div style={cardS}>
     <Label>Mitarbeiter ({employees.length})</Label>
+    <AdminTeamAdd onAdd={onAddEmployee} />
     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,1.5fr) minmax(0,1fr) auto', fontSize: 11, color: T.faint, letterSpacing: '0.08em', textTransform: 'uppercase', padding: '0 0 8px', borderBottom: '1px solid ' + T.lineSoft }}>
       <span>Name</span><span>Rolle</span><span>PIN</span><span></span>
     </div>
@@ -1424,7 +1495,10 @@ const AdminTeam = ({ employees, onResetPin }) => (
       <div key={e.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,1.5fr) minmax(0,1fr) auto', alignItems: 'center', padding: '11px 0', borderBottom: '1px solid ' + T.lineSoft, fontSize: 13, color: T.ink }}>
         <span>{e.name}</span><span style={{ color: T.muted }}>{e.role}</span>
         <span style={{ color: e.pinSet ? T.greenSoft : T.faint }}>{e.pinSet ? 'gesetzt' : '–'}</span>
-        <span>{e.pinSet && <button onClick={() => { if (confirm('PIN für ' + e.name + ' zurücksetzen?')) onResetPin(e.id); }} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '5px 10px', fontSize: 12, color: T.muted, cursor: 'pointer' }}>Reset</button>}</span>
+        <span style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+          {e.pinSet && <button onClick={() => { if (confirm('PIN für ' + e.name + ' zurücksetzen?')) onResetPin(e.id); }} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '5px 10px', fontSize: 12, color: T.muted, cursor: 'pointer' }}>Reset</button>}
+          <button onClick={() => { if (confirm(e.name + ' endgültig aus dem Team entfernen? Der Zugang wird sofort gesperrt.')) onDelEmployee(e.id); }} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '5px 10px', fontSize: 12, color: '#c0392b', cursor: 'pointer' }}>Löschen</button>
+        </span>
       </div>
     ))}
   </div>
