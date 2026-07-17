@@ -899,7 +899,7 @@ const ProfileForm = ({ existing, onSave, readOnly = false, employeeName = '' }) 
         <div style={{ ...cardS, background: T.chip, border: 'none' }}>
           <p style={subLabel}>Dein öffentliches Profil</p>
           <p style={{ fontSize: 12, color: T.muted, margin: '0 0 10px', lineHeight: 1.6 }}>Zusätzlich kannst du dein eigenes Profil (Bio/Vorstellung) für unsere Website pflegen — das ist ein separates, kurzes Formular.</p>
-          <a href={PROFIL_FORMULAR_URL} target="_blank" rel="noopener noreferrer" style={{ color: T.mauve, fontSize: 13, fontWeight: 500, textDecoration: 'none' }}>→ Mein Profil pflegen</a>
+          <a href={`${PROFIL_FORMULAR_URL}?typ=profil&name=${encodeURIComponent(employeeName)}`} target="_blank" rel="noopener noreferrer" style={{ color: T.mauve, fontSize: 13, fontWeight: 500, textDecoration: 'none' }}>→ Mein Profil pflegen</a>
         </div>
       )}
     </div>
