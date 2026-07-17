@@ -215,6 +215,11 @@ const App = () => {
   const [tools, setTools] = useState(DEFAULT_TOOLS);
   const [messages, setMessages] = useState([]);
   const [audit, setAudit] = useState([]);
+  // Admin-Vorschau ("wie sieht das für Mitarbeiter X aus?") — rein clientseitig,
+  // schreibt/liest keine eigenen Daten. Löst NICHT die Admin-Session ab (siehe
+  // Render-Zweig unten): "Vorschau schließen" setzt nur dieses Feld zurück,
+  // die eigentliche Verwaltung-Session (user/page) bleibt unverändert bestehen.
+  const [previewEmployeeId, setPreviewEmployeeId] = useState(null);
   // Stammdaten der §613a-Übernahme (Bad Schwartau) und perspektivisch aller
   // Mitarbeitenden: ein Datensatz pro Person, id = Mitarbeiter-id (siehe
   // saveStammdaten unten — Upsert statt Append, damit erneutes Speichern
@@ -671,7 +676,31 @@ const backfillMissingIds = (items) => {
 
   if (page === 'login') return <Login employees={employees} onPinSetup={pinSetup} onEmployeeLogin={employeeLogin} onAdminLogin={adminLogin} />;
   if (page === 'employee' && user) return <Employee user={user} news={news} tools={tools} messages={messages.filter(m => forMe(m, user))} stammdaten={stammdaten.find(s => s.id === user.id) || null} onSaveStammdaten={fields => saveStammdaten(user.id, fields)} onMarkRead={markRead} onReply={addReply} onToggleLike={toggleLike} onComment={addComment} onToggleConfirm={toggleConfirm} onLogout={logout} />;
-  if (page === 'admin' && user?.isAdmin) return <Admin user={user} news={news} tools={tools} messages={messages} employees={employees} audit={audit} stammdaten={stammdaten} onAddNews={addNews} onUpdateNews={updateNews} onDelNews={delNews} onMoveNews={moveNews} onAddTool={addTool} onUpdateTool={updateTool} onDelTool={delTool} onSend={sendMessage} onReply={addReply} onCloseDialog={closeDialog} onReopenDialog={reopenDialog} onResetPin={resetPin} onAddEmployee={addEmployee} onDelEmployee={delEmployee} onLogout={logout} />;
+  // Admin-Vorschau geht vor dem normalen Admin-Bildschirm: solange
+  // previewEmployeeId gesetzt ist, sieht die Verwaltung die echte
+  // Employee-Oberfläche der gewählten Person (readOnly=true, siehe unten) —
+  // ohne deren PIN zu kennen und ohne die eigene Admin-Session zu verlassen.
+  if (page === 'admin' && user?.isAdmin && previewEmployeeId) {
+    const previewUser = employees.find(e => e.id === previewEmployeeId);
+    if (previewUser) {
+      return <Employee
+        user={previewUser}
+        news={news}
+        tools={tools}
+        messages={messages.filter(m => forMe(m, previewUser))}
+        stammdaten={stammdaten.find(s => s.id === previewUser.id) || null}
+        onSaveStammdaten={() => {}}
+        onMarkRead={() => {}}
+        onReply={() => {}}
+        onToggleLike={() => {}}
+        onComment={() => {}}
+        onToggleConfirm={() => {}}
+        onLogout={() => setPreviewEmployeeId(null)}
+        readOnly
+      />;
+    }
+  }
+  if (page === 'admin' && user?.isAdmin) return <Admin user={user} news={news} tools={tools} messages={messages} employees={employees} audit={audit} stammdaten={stammdaten} onAddNews={addNews} onUpdateNews={updateNews} onDelNews={delNews} onMoveNews={moveNews} onAddTool={addTool} onUpdateTool={updateTool} onDelTool={delTool} onSend={sendMessage} onReply={addReply} onCloseDialog={closeDialog} onReopenDialog={reopenDialog} onResetPin={resetPin} onAddEmployee={addEmployee} onDelEmployee={delEmployee} onLogout={logout} onPreviewEmployee={setPreviewEmployeeId} />;
   return null;
 };
 
@@ -809,13 +838,19 @@ const Login = ({ employees, onPinSetup, onEmployeeLogin, onAdminLogin }) => {
   );
 };
 
-const Employee = ({ user, news, tools, messages, stammdaten, onSaveStammdaten, onMarkRead, onReply, onToggleLike, onComment, onToggleConfirm, onLogout }) => {
+const Employee = ({ user, news, tools, messages, stammdaten, onSaveStammdaten, onMarkRead, onReply, onToggleLike, onComment, onToggleConfirm, onLogout, readOnly = false }) => {
   const [tab, setTab] = useState('news');
   const initials = user.name.split(' ').map(w => w[0]).join('').slice(0, 2);
   const unread = messages.filter(m => !m.readBy.some(r => r.id === user.id)).length;
   const stammdatenComplete = isStammdatenComplete(stammdaten);
   return (
     <div style={{ minHeight: '100vh', background: T.bg, fontFamily: 'system-ui,-apple-system,sans-serif', display: 'flex', flexDirection: 'column' }}>
+      {readOnly && (
+        <div style={{ background: T.ink, color: '#fff', padding: '8px 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, fontSize: 12.5, flexWrap: 'wrap' }}>
+          <span>🔍 Vorschau — so sieht es für <strong>{user.name}</strong> aus. Nur Ansicht, es wird nichts gespeichert.</span>
+          <button onClick={onLogout} style={{ background: 'none', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 7, padding: '4px 12px', fontSize: 12, color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}>Vorschau schließen</button>
+        </div>
+      )}
       <BrandHeader right={
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ textAlign: 'right' }}>
@@ -823,7 +858,7 @@ const Employee = ({ user, news, tools, messages, stammdaten, onSaveStammdaten, o
             <p style={{ margin: 0, fontSize: 10, color: T.faint, letterSpacing: '0.06em', textTransform: 'uppercase' }}>{user.role}</p>
           </div>
           <div style={{ width: 36, height: 36, borderRadius: '50%', background: T.chip, color: T.muted, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 500 }}>{initials}</div>
-          <button onClick={onLogout} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '6px 12px', fontSize: 12, color: T.muted, cursor: 'pointer' }}>Abmelden</button>
+          <button onClick={onLogout} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '6px 12px', fontSize: 12, color: T.muted, cursor: 'pointer' }}>{readOnly ? 'Vorschau schließen' : 'Abmelden'}</button>
         </div>
       } />
       <div style={{ background: T.surface, borderBottom: '1px solid ' + T.lineSoft }}>
@@ -836,8 +871,8 @@ const Employee = ({ user, news, tools, messages, stammdaten, onSaveStammdaten, o
       <div style={{ flex: 1, maxWidth: 1100, margin: '0 auto', width: '100%', padding: '1.75rem 1.5rem', boxSizing: 'border-box' }}>
         {tab === 'news' && <NewsFeed news={news} />}
         {tab === 'tools' && <ToolsList tools={tools} />}
-        {tab === 'stammdaten' && <StammdatenForm existing={stammdaten} onSave={onSaveStammdaten} />}
-        {tab === 'postfach' && <Postfach user={user} messages={messages} onMarkRead={onMarkRead} onReply={onReply} onToggleLike={onToggleLike} onComment={onComment} onToggleConfirm={onToggleConfirm} />}
+        {tab === 'stammdaten' && <StammdatenForm existing={stammdaten} onSave={onSaveStammdaten} readOnly={readOnly} />}
+        {tab === 'postfach' && <Postfach user={user} messages={messages} onMarkRead={onMarkRead} onReply={onReply} onToggleLike={onToggleLike} onComment={onComment} onToggleConfirm={onToggleConfirm} readOnly={readOnly} />}
       </div>
     </div>
   );
@@ -953,7 +988,7 @@ const isStammdatenComplete = s => !!s && STAMMDATEN_REQUIRED_FIELDS.every(f => (
 
 const WOCHENTAGE = [['moStd', 'Mo'], ['diStd', 'Di'], ['miStd', 'Mi'], ['doStd', 'Do'], ['frStd', 'Fr'], ['saStd', 'Sa'], ['soStd', 'So']];
 
-const StammdatenForm = ({ existing, onSave }) => {
+const StammdatenForm = ({ existing, onSave, readOnly = false }) => {
   const blank = {
     nachname: '', vorname: '', geburtsname: '', geschlecht: '',
     strasse: '', plz: '', ort: '', geburtsdatum: '', geburtsort: '', geburtsland: '', staatsangehoerigkeit: '',
@@ -1007,12 +1042,18 @@ const StammdatenForm = ({ existing, onSave }) => {
       <p style={{ fontSize: 12, color: T.muted, margin: '-0.4rem 0 1.2rem', lineHeight: 1.6 }}>
         Grundlage für dein Mitarbeitergespräch und die künftige Lohn-/Gehaltsabrechnung (entspricht dem Personalfragebogen unseres Lohnbüros). Bitte vollständig ausfüllen — du kannst jederzeit zurückkommen und ergänzen, nichts geht verloren.
       </p>
-      {!complete && (
+      {!complete && !readOnly && (
         <div style={{ background: '#fdf3ea', border: '1px solid ' + T.mauveSoft, borderRadius: 10, padding: '10px 14px', fontSize: 12, color: T.muted, marginBottom: 16 }}>
           Noch nicht vollständig — Pflichtfelder unten, der Arbeitsvertrag-Upload sowie die Bestätigung am Ende fehlen noch teilweise.
         </div>
       )}
 
+      {/* Vorschau-Modus (Admin sieht sich die Mitarbeiter-Sicht an): Felder
+          bleiben lesbar, aber pointerEvents:none macht die gesamte Karten-
+          Sektion inkl. aller verschachtelten Inputs/Buttons/Uploads mit einer
+          einzigen Regel nicht-interaktiv — kein Risiko, versehentlich echte
+          Mitarbeiterdaten zu überschreiben. */}
+      <div style={readOnly ? { pointerEvents: 'none', opacity: 0.75 } : undefined}>
       <div style={cardS}>
         <p style={subLabel}>Persönliche Daten</p>
         <div style={{ display: 'flex', gap: 12 }}>
@@ -1261,25 +1302,28 @@ const StammdatenForm = ({ existing, onSave }) => {
         </label>
         <p style={{ fontSize: 11, color: T.faint, margin: '8px 0 0' }}>Diese digitale Bestätigung ersetzt keine ggf. gesondert erforderliche handschriftliche Unterschrift auf dem Arbeitsvertrag selbst.</p>
       </div>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-        <button onClick={submit} disabled={saving} style={{ ...primaryBtn, background: T.green, opacity: saving ? 0.6 : 1, cursor: saving ? 'default' : 'pointer' }}>{saving ? 'Wird gespeichert …' : 'Speichern'}</button>
-        {savedAt && <span style={{ fontSize: 12, color: T.greenSoft }}>Gespeichert um {savedAt}</span>}
       </div>
+
+      {readOnly
+        ? <p style={{ fontSize: 12, color: T.faint, fontStyle: 'italic' }}>Vorschau-Modus — dieses Formular wird hier nur angezeigt, nicht gespeichert.</p>
+        : <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <button onClick={submit} disabled={saving} style={{ ...primaryBtn, background: T.green, opacity: saving ? 0.6 : 1, cursor: saving ? 'default' : 'pointer' }}>{saving ? 'Wird gespeichert …' : 'Speichern'}</button>
+            {savedAt && <span style={{ fontSize: 12, color: T.greenSoft }}>Gespeichert um {savedAt}</span>}
+          </div>}
     </div>
   );
 };
 
-const Postfach = ({ user, messages, onMarkRead, onReply, onToggleLike, onComment, onToggleConfirm }) => (
+const Postfach = ({ user, messages, onMarkRead, onReply, onToggleLike, onComment, onToggleConfirm, readOnly = false }) => (
   <div>
     <Label>Mein persönlicher Bereich</Label>
     <p style={{ fontSize: 12, color: T.muted, margin: '-0.4rem 0 1.2rem', lineHeight: 1.6 }}>Hier erhältst du persönliche Nachrichten und Dokumente von der Verwaltung. Du kannst direkt antworten und Dateien zurücksenden. Alle Vorgänge werden protokolliert.</p>
     {messages.length === 0 && <Empty text="Noch keine Nachrichten in deinem Bereich." />}
-    {messages.map(m => <MessageThread key={m.id} m={m} user={user} unread={!m.readBy.some(r => r.id === user.id)} onOpen={() => onMarkRead(m.id)} onReply={onReply} onToggleLike={onToggleLike} onComment={onComment} onToggleConfirm={onToggleConfirm} />)}
+    {messages.map(m => <MessageThread key={m.id} m={m} user={user} unread={!m.readBy.some(r => r.id === user.id)} onOpen={() => onMarkRead(m.id)} onReply={onReply} onToggleLike={onToggleLike} onComment={onComment} onToggleConfirm={onToggleConfirm} readOnly={readOnly} />)}
   </div>
 );
 
-const MessageThread = ({ m, user, unread, onOpen, onReply, onToggleLike, onComment, onToggleConfirm }) => {
+const MessageThread = ({ m, user, unread, onOpen, onReply, onToggleLike, onComment, onToggleConfirm, readOnly = false }) => {
   const [open, setOpen] = useState(false);
   const [reply, setReply] = useState('');
   const [pendingFiles, setPendingFiles] = useState([]);
@@ -1297,7 +1341,8 @@ const MessageThread = ({ m, user, unread, onOpen, onReply, onToggleLike, onComme
         {unread ? <span style={{ width: 7, height: 7, borderRadius: '50%', background: T.mauveSoft }} /> : <span style={{ color: '#c4bfb2', fontSize: 12 }}>{open ? '▴' : '▾'}</span>}
       </div>
       {open && (
-        <div style={{ padding: '0 15px 15px 58px', fontSize: 13, lineHeight: 1.65, color: T.muted }}>
+        <div style={{ padding: '0 15px 15px 58px', fontSize: 13, lineHeight: 1.65, color: T.muted, ...(readOnly ? { pointerEvents: 'none', opacity: 0.75 } : {}) }}>
+          {readOnly && <p style={{ fontSize: 11, color: T.faint, fontStyle: 'italic', margin: '0 0 10px' }}>Vorschau-Modus — Antworten, Kommentare, „Gefällt mir" und Zusagen sind hier nicht möglich.</p>}
           {m.photos && m.photos.length > 0 && m.photos[0].url && (
             <div style={{ aspectRatio: '16/9', overflow: 'hidden', borderRadius: 8, marginBottom: 10, maxWidth: 420 }}>
               <img src={m.photos[0].url} alt={m.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -1372,7 +1417,7 @@ const MessageThread = ({ m, user, unread, onOpen, onReply, onToggleLike, onComme
   );
 };
 
-const Admin = ({ user, news, tools, messages, employees, audit, stammdaten, onAddNews, onUpdateNews, onDelNews, onMoveNews, onAddTool, onUpdateTool, onDelTool, onSend, onReply, onCloseDialog, onReopenDialog, onResetPin, onAddEmployee, onDelEmployee, onLogout }) => {
+const Admin = ({ user, news, tools, messages, employees, audit, stammdaten, onAddNews, onUpdateNews, onDelNews, onMoveNews, onAddTool, onUpdateTool, onDelTool, onSend, onReply, onCloseDialog, onReopenDialog, onResetPin, onAddEmployee, onDelEmployee, onLogout, onPreviewEmployee }) => {
   const [tab, setTab] = useState('news');
   return (
     <div style={{ minHeight: '100vh', background: T.bg, fontFamily: 'system-ui,-apple-system,sans-serif', display: 'flex', flexDirection: 'column' }}>
@@ -1395,7 +1440,7 @@ const Admin = ({ user, news, tools, messages, employees, audit, stammdaten, onAd
         {tab === 'tools' && <AdminTools tools={tools} onAdd={onAddTool} onUpdate={onUpdateTool} onDel={onDelTool} />}
         {tab === 'post' && <AdminPost employees={employees} messages={messages} onSend={onSend} onReply={onReply} onCloseDialog={onCloseDialog} onReopenDialog={onReopenDialog} />}
         {tab === 'stammdaten' && <AdminStammdaten employees={employees} stammdaten={stammdaten} />}
-        {tab === 'team' && <AdminTeam employees={employees} onResetPin={onResetPin} onAddEmployee={onAddEmployee} onDelEmployee={onDelEmployee} />}
+        {tab === 'team' && <AdminTeam employees={employees} onResetPin={onResetPin} onAddEmployee={onAddEmployee} onDelEmployee={onDelEmployee} onPreviewEmployee={onPreviewEmployee} />}
         {tab === 'audit' && <AdminAudit audit={audit} />}
       </div>
     </div>
@@ -2025,7 +2070,7 @@ const AdminStammdaten = ({ employees, stammdaten }) => {
   );
 };
 
-const AdminTeam = ({ employees, onResetPin, onAddEmployee, onDelEmployee }) => (
+const AdminTeam = ({ employees, onResetPin, onAddEmployee, onDelEmployee, onPreviewEmployee }) => (
   <div style={cardS}>
     <Label>Mitarbeiter ({employees.length})</Label>
     <AdminTeamAdd onAdd={onAddEmployee} />
@@ -2037,6 +2082,7 @@ const AdminTeam = ({ employees, onResetPin, onAddEmployee, onDelEmployee }) => (
         <span>{e.name}</span><span style={{ color: T.muted }}>{e.role}</span>
         <span style={{ color: e.pinSet ? T.greenSoft : T.faint }}>{e.pinSet ? 'gesetzt' : '–'}</span>
         <span style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+          {onPreviewEmployee && <button onClick={() => onPreviewEmployee(e.id)} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '5px 10px', fontSize: 12, color: T.muted, cursor: 'pointer' }} title="Zeigt die Mitarbeiter-Oberfläche dieser Person read-only an">Vorschau</button>}
           {e.pinSet && <button onClick={() => { if (confirm('PIN für ' + e.name + ' zurücksetzen?')) onResetPin(e.id); }} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '5px 10px', fontSize: 12, color: T.muted, cursor: 'pointer' }}>Reset</button>}
           <button onClick={() => { if (confirm(e.name + ' endgültig aus dem Team entfernen? Der Zugang wird sofort gesperrt.')) onDelEmployee(e.id); }} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '5px 10px', fontSize: 12, color: '#c0392b', cursor: 'pointer' }}>Löschen</button>
         </span>
