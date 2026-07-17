@@ -2,7 +2,6 @@
   "name": "physiopro-badschwartau",
   "version": "1.0.0",
   "description": "Onboarding-Site für neue Mitarbeiter von PhysioPro Bad Schwartau (getrennt vom STUFF Intranet)",
-  "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
