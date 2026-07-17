@@ -7,6 +7,8 @@
 // MAIL_SENDER, MAIL_RECIPIENT, MAIL_CC). AZURE_CLIENT_SECRET ist ein eigenes,
 // zweites Secret derselben Azure-App (17.07. von Oliver angelegt) — beeinflusst
 // physiopro-fragebogen nicht.
+// Deploy-Trigger 17.07. 10:39 UTC: erzwingt frisches Deploy, damit die
+// Function-Runtime den zuletzt gesetzten AZURE_CLIENT_SECRET sicher sieht.
 const HEADERS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type', 'Content-Type': 'application/json' };
 
 const LABELS = {
