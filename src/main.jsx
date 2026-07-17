@@ -933,7 +933,10 @@ const ToolsList = ({ tools }) => (
 // den Mitarbeitergesprächen). Bewusst NICHT "Schwerbehinderung" oder
 // "Nebentätigkeit" — das sind freiwillige bzw. situationsabhängige Angaben,
 // deren Fehlen nicht "unvollständig" bedeuten soll.
-const STAMMDATEN_REQUIRED_FIELDS = ['strasse', 'plz', 'ort', 'geburtsdatum', 'steuerId', 'steuerklasse', 'sozialversicherungsnummer', 'krankenkasse', 'iban', 'kontoinhaber'];
+// "kontoinhaber" bewusst NICHT hier: laut Formular nur auszufüllen, wenn das
+// Konto nicht auf die eigene Person läuft ("falls abweichend") — ein leeres
+// Feld ist dort der Normalfall, nicht ein fehlender Wert.
+const STAMMDATEN_REQUIRED_FIELDS = ['strasse', 'plz', 'ort', 'geburtsdatum', 'steuerId', 'steuerklasse', 'sozialversicherungsnummer', 'krankenkasse', 'iban'];
 const isStammdatenComplete = s => !!s && STAMMDATEN_REQUIRED_FIELDS.every(f => (s[f] || '').toString().trim().length > 0) && !!s.vertrag;
 
 const StammdatenForm = ({ existing, onSave }) => {
