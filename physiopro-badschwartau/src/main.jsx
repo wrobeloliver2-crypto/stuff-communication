@@ -13,10 +13,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
 
+// Farben orientiert an physioproluebeck.de (Marken-Grün #55725e, warmes
+// Creme #faf8f4, dunkles Warmgrau als Text) — vorherige Version hatte einen
+// Kontrast-Bug: Eingabefelder hatten dieselbe Hintergrundfarbe wie die Seite
+// UND eine fast unsichtbare Rahmenfarbe. Jetzt: Felder immer weiß, Rahmen
+// deutlich sichtbar, Fließtext/Labels dunkler (alle Werte gegen WCAG-AA
+// grob geprüft).
 const T = {
-  bg: '#faf8f4', surface: '#ffffff', line: '#e6e1d6', lineSoft: '#ece7dc',
-  ink: '#2b2b28', muted: '#5a584f', faint: '#a39e92',
-  green: '#4a5d3a', greenSoft: '#6e8159', mauve: '#b07882', mauveSoft: '#c08a93', chip: '#f4f2eb',
+  bg: '#faf8f4', surface: '#ffffff', field: '#ffffff',
+  line: '#c7bda3', lineSoft: '#e4ddc9',
+  ink: '#2c2825', muted: '#54504a', faint: '#7d7669',
+  green: '#55725e', greenDark: '#3c5346', greenSoft: '#4f6c57',
+  mint: '#e9f0ea',
+  mauve: '#8f5763', mauveSoft: '#d9adb3', blush: '#f6e9e7', chip: '#f4f2eb',
 };
 
 const AUTH_URL = '/.netlify/functions/auth';
@@ -287,12 +296,29 @@ const App = () => {
   return null;
 };
 
+// Logo-Bildmarke nachgebaut (Klammer-/Sucher-Rahmen), passend zum
+// physioproluebeck.de-Markenauftritt — als SVG statt Rasterbild, damit sie
+// überall scharf bleibt.
+const LogoMark = ({ size = 34, color }) => (
+  <svg width={size} height={size} viewBox="0 0 100 100" aria-hidden="true">
+    <g fill="none" stroke={color} strokeWidth={9} strokeLinecap="square">
+      <path d="M6,32 V6 H32" />
+      <path d="M68,6 H94 V32" />
+      <path d="M94,68 V94 H68" />
+      <path d="M32,94 H6 V68" />
+    </g>
+  </svg>
+);
+
 const BrandHeader = ({ right }) => (
   <div style={{ background: T.surface, borderBottom: '1px solid ' + T.lineSoft }}>
     <div style={{ maxWidth: 1000, margin: '0 auto', padding: '1rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-      <div>
-        <p style={{ margin: 0, fontSize: 18, fontWeight: 600, color: T.ink, letterSpacing: '0.02em' }}>PhysioPro <span style={{ color: T.green }}>Bad Schwartau</span></p>
-        <p style={{ margin: 0, fontSize: 11, color: T.faint, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Meine Daten</p>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <LogoMark color={T.green} />
+        <div>
+          <p style={{ margin: 0, fontSize: 18, fontWeight: 600, color: T.ink, letterSpacing: '0.02em' }}>PhysioPro <span style={{ color: T.green }}>Bad Schwartau</span></p>
+          <p style={{ margin: 0, fontSize: 11, color: T.faint, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Meine Daten</p>
+        </div>
       </div>
       {right}
     </div>
@@ -336,13 +362,13 @@ const Login = ({ employees, onPinSetup, onEmployeeLogin, onAdminLogin }) => {
   const [np, setNp] = useState(''); const [cp, setCp] = useState('');
   const [email, setEmail] = useState(''); const [pw, setPw] = useState('');
   const emp = employees.find(e => e.id === sel);
-  const inp = { width: '100%', padding: '11px 12px', marginBottom: 12, border: '1px solid ' + T.line, borderRadius: 8, fontSize: 14, boxSizing: 'border-box', background: T.surface, color: T.ink };
+  const inp = { width: '100%', padding: '11px 12px', marginBottom: 12, border: '1.5px solid ' + T.line, borderRadius: 8, fontSize: 14, boxSizing: 'border-box', background: T.field, color: T.ink };
   const btn = tone => ({ width: '100%', padding: 11, border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 500, color: '#fff', background: tone, letterSpacing: '0.03em' });
   return (
     <div style={{ minHeight: '100vh', background: T.bg, fontFamily: 'system-ui,-apple-system,sans-serif', display: 'flex', flexDirection: 'column' }}>
       <BrandHeader />
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-        <div style={{ background: T.surface, border: '0.5px solid ' + T.line, borderRadius: 14, padding: '2.5rem', maxWidth: 420, width: '100%' }}>
+        <div style={{ background: T.surface, border: '1px solid ' + T.line, borderRadius: 14, padding: '2.5rem', maxWidth: 420, width: '100%' }}>
           <h1 style={{ margin: '0 0 0.4rem', fontSize: 21, fontWeight: 500, color: T.ink }}>Willkommen</h1>
           <p style={{ margin: '0 0 1.75rem', fontSize: 13, color: T.muted }}>Bitte melde dich an, um deine Daten einzutragen.</p>
           <div style={{ display: 'flex', gap: 24, borderBottom: '1px solid ' + T.lineSoft, marginBottom: '1.5rem' }}>
@@ -385,9 +411,10 @@ const Login = ({ employees, onPinSetup, onEmployeeLogin, onAdminLogin }) => {
   );
 };
 
-const cardS = { background: T.surface, border: '0.5px solid ' + T.line, borderRadius: 12, padding: '1.5rem', marginBottom: '1.5rem' };
-const fieldS = { width: '100%', padding: '11px 12px', marginBottom: 12, border: '1px solid ' + T.line, borderRadius: 8, fontSize: 14, boxSizing: 'border-box', fontFamily: 'inherit', color: T.ink, background: T.bg };
+const cardS = { background: T.surface, border: '1px solid ' + T.lineSoft, borderRadius: 12, padding: '1.5rem', marginBottom: '1.5rem', boxShadow: '0 1px 2px rgba(44,40,37,0.04)' };
+const fieldS = { width: '100%', padding: '11px 12px', marginBottom: 12, border: '1.5px solid ' + T.line, borderRadius: 8, fontSize: 14, boxSizing: 'border-box', fontFamily: 'inherit', color: T.ink, background: T.field };
 const primaryBtn = { padding: '10px 20px', border: 'none', borderRadius: 8, background: T.mauve, color: '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer' };
+const secondaryBtn = { padding: '10px 20px', border: '1.5px solid ' + T.green, borderRadius: 8, background: '#fff', color: T.green, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
 const subLabel = { fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: T.faint, margin: '0.5rem 0 0.6rem' };
 
 const Employee = ({ user, existing, onSave, onLogout, readOnly = false }) => (
@@ -405,12 +432,28 @@ const Employee = ({ user, existing, onSave, onLogout, readOnly = false }) => (
       </div>
     } />
     <div style={{ flex: 1, maxWidth: 900, margin: '0 auto', width: '100%', padding: '1.75rem 1.5rem', boxSizing: 'border-box' }}>
-      <ProfileForm existing={existing} onSave={onSave} readOnly={readOnly} />
+      <GreetingCard name={user.name} />
+      <ProfileForm existing={existing} onSave={onSave} readOnly={readOnly} employeeName={user.name} />
     </div>
   </div>
 );
 
-const ProfileForm = ({ existing, onSave, readOnly = false }) => {
+// Persönliche Begrüßung von Hanna, oben im Formular — Wunsch vom 17.07.:
+// "Hallo {Vorname}, wir freuen uns auf dich ... LG Hanna". Vorname wird aus
+// dem angemeldeten Namen abgeleitet (erstes Wort).
+const GreetingCard = ({ name }) => {
+  const firstName = (name || '').trim().split(/\s+/)[0] || '';
+  return (
+    <div style={{ background: T.mint, border: '1px solid ' + T.line, borderRadius: 12, padding: '1.4rem 1.6rem', marginBottom: '1.5rem' }}>
+      <p style={{ margin: 0, fontSize: 15, color: T.ink, lineHeight: 1.65 }}>
+        Hallo {firstName}, wir freuen uns auf dich und benötigen noch ein paar Angaben, damit wir alle den gleichen Stand haben und auch schon alles für den Steuerberater vorbereitet ist.
+      </p>
+      <p style={{ margin: '10px 0 0', fontSize: 14, color: T.muted, fontStyle: 'italic' }}>LG Hanna</p>
+    </div>
+  );
+};
+
+const ProfileForm = ({ existing, onSave, readOnly = false, employeeName = '' }) => {
   const blank = {
     nachname: '', vorname: '', geburtsname: '', geschlecht: '',
     strasse: '', plz: '', ort: '', geburtsdatum: '', geburtsort: '', geburtsland: '', staatsangehoerigkeit: '',
@@ -431,11 +474,14 @@ const ProfileForm = ({ existing, onSave, readOnly = false }) => {
     vorbeschaeftigungen: [],
     vertrag: null, qualifikationen: [],
     erklaerungBestaetigt: false, erklaerungDatum: '',
+    submitted: false, submittedAt: '',
   };
   const [f, setF] = useState({ ...blank, ...(existing || {}) });
   const [qLabel, setQLabel] = useState('');
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState(null);
+  const [transmitting, setTransmitting] = useState(false);
+  const [transmitMsg, setTransmitMsg] = useState(null);
   const set = (k, v) => setF(prev => ({ ...prev, [k]: v }));
 
   const addKind = () => { if (f.kinder.length < 5) set('kinder', [...f.kinder, { name: '', vorname: '', geburtsdatum: '' }]); };
@@ -451,6 +497,39 @@ const ProfileForm = ({ existing, onSave, readOnly = false }) => {
     setSaving(true);
     try { await onSave(f); setSavedAt(new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })); }
     finally { setSaving(false); }
+  };
+
+  // "Angaben übermitteln" — Wunsch vom 17.07.: erst wenn alles vollständig
+  // ausgefüllt ist, schickt der Mitarbeiter seine Daten final ab. Das
+  // speichert (wie "Speichern") UND schickt zusätzlich eine
+  // Zusammenfassungs-Mail an Hanna & Oliver (Netlify-Function
+  // notify-submission, Versand über denselben Weg wie physiopro-fragebogen).
+  const transmit = async () => {
+    if (f.email && !f.emailConsent) return alert('Bitte bestätige das Einverständnis zur Kontaktaufnahme per E-Mail, oder lasse das E-Mail-Feld leer.');
+    if (!isProfileComplete(f)) return alert('Bitte zuerst alle Pflichtfelder, den Vertrags-Upload und die Bestätigung am Ende ausfüllen — erst dann können die Angaben übermittelt werden.');
+    setTransmitting(true);
+    setTransmitMsg(null);
+    try {
+      const submittedAt = new Date().toLocaleString('de-DE');
+      const toSave = { ...f, submitted: true, submittedAt };
+      setF(toSave);
+      await onSave(toSave);
+      setSavedAt(new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }));
+      try {
+        const res = await fetch('/.netlify/functions/notify-submission', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ employeeName, profile: toSave }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (data.ok) setTransmitMsg({ ok: true, text: 'Deine Angaben wurden übermittelt — Hanna und Oliver wurden per E-Mail benachrichtigt.' });
+        else setTransmitMsg({ ok: false, text: 'Deine Angaben sind gespeichert, die Benachrichtigungs-Mail konnte aber gerade nicht verschickt werden (' + (data.error || 'unbekannter Fehler') + '). Bitte kurz direkt Bescheid geben.' });
+      } catch (mailErr) {
+        setTransmitMsg({ ok: false, text: 'Deine Angaben sind gespeichert, die Benachrichtigungs-Mail konnte aber gerade nicht verschickt werden. Bitte kurz direkt Bescheid geben.' });
+      }
+    } finally {
+      setTransmitting(false);
+    }
   };
 
   const complete = isProfileComplete(f);
@@ -712,8 +791,13 @@ const ProfileForm = ({ existing, onSave, readOnly = false }) => {
           <input value={f.wazBisher} onChange={e => set('wazBisher', e.target.value)} placeholder="Bisherige Wochenarbeitszeit gesamt (Std.)" style={{ ...fieldS, flex: 1 }} />
           <input value={f.gehaltBisher} onChange={e => set('gehaltBisher', e.target.value)} placeholder="Bisheriges Gehalt (€, brutto)" style={{ ...fieldS, flex: 1 }} />
         </div>
-        <p style={{ fontSize: 11, color: T.faint, margin: '-6px 0 12px' }}>Bitte laut deinem bisherigen Arbeitsvertrag angeben — wird im Gespräch abgeglichen.</p>
-        <textarea value={f.anmerkung} onChange={e => set('anmerkung', e.target.value)} placeholder="Anmerkungen (optional)" rows={3} style={{ ...fieldS, fontFamily: 'inherit', resize: 'vertical' }} />
+        <p style={{ fontSize: 11, color: T.faint, margin: '-6px 0 0' }}>Bitte laut deinem bisherigen Arbeitsvertrag angeben — wird im Gespräch abgeglichen.</p>
+      </div>
+
+      <div style={cardS}>
+        <p style={subLabel}>Anmerkungen</p>
+        <p style={{ fontSize: 12, color: T.muted, margin: '0 0 10px', lineHeight: 1.6 }}>Gibt es sonst noch etwas, das wir wissen sollten? Freiwillig.</p>
+        <textarea value={f.anmerkung} onChange={e => set('anmerkung', e.target.value)} placeholder="Deine Anmerkung …" rows={3} style={{ ...fieldS, marginBottom: 0, fontFamily: 'inherit', resize: 'vertical' }} />
       </div>
 
       <div style={cardS}>
@@ -733,9 +817,15 @@ const ProfileForm = ({ existing, onSave, readOnly = false }) => {
 
       {readOnly
         ? <p style={{ fontSize: 12, color: T.faint, fontStyle: 'italic' }}>Vorschau-Modus — dieses Formular wird hier nur angezeigt, nicht gespeichert.</p>
-        : <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 24 }}>
-            <button onClick={submit} disabled={saving} style={{ ...primaryBtn, background: T.green, opacity: saving ? 0.6 : 1, cursor: saving ? 'default' : 'pointer' }}>{saving ? 'Wird gespeichert …' : 'Speichern'}</button>
-            {savedAt && <span style={{ fontSize: 12, color: T.greenSoft }}>Gespeichert um {savedAt}</span>}
+        : <div style={{ marginBottom: 24 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginBottom: 10 }}>
+              <button onClick={submit} disabled={saving} style={{ ...secondaryBtn, opacity: saving ? 0.6 : 1, cursor: saving ? 'default' : 'pointer' }}>{saving ? 'Wird gespeichert …' : 'Speichern'}</button>
+              <button onClick={transmit} disabled={transmitting} style={{ ...primaryBtn, background: T.green, opacity: transmitting ? 0.6 : 1, cursor: transmitting ? 'default' : 'pointer' }}>{transmitting ? 'Wird übermittelt …' : 'Angaben übermitteln'}</button>
+              {savedAt && <span style={{ fontSize: 12, color: T.greenSoft }}>Gespeichert um {savedAt}</span>}
+            </div>
+            <p style={{ fontSize: 11.5, color: T.faint, margin: '0 0 8px', lineHeight: 1.6 }}>„Speichern" sichert deinen Stand zwischendurch. Erst mit „Angaben übermitteln" — wenn alles vollständig ausgefüllt ist — bekommen Hanna und Oliver automatisch eine Benachrichtigung, dass deine Daten fertig sind.</p>
+            {f.submitted && <p style={{ fontSize: 12, color: T.greenSoft, margin: '0 0 4px' }}>✓ Übermittelt am {f.submittedAt}</p>}
+            {transmitMsg && <p style={{ fontSize: 12, color: transmitMsg.ok ? T.greenSoft : T.mauve, margin: 0 }}>{transmitMsg.text}</p>}
           </div>}
 
       {!readOnly && (
@@ -861,8 +951,14 @@ const ProfileDetail = ({ s }) => {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 24px' }}>
           <DetailRow label="Bisherige WAZ / Gehalt" value={`${s.wazBisher || '–'} Std. / ${s.gehaltBisher || '–'} €`} />
         </div>
-        {s.anmerkung && <div style={{ marginTop: 6 }}><span style={{ color: T.faint }}>Anmerkung: </span>{s.anmerkung}</div>}
       </div>
+
+      {s.anmerkung && (
+        <div>
+          <p style={subLabel}>Anmerkungen</p>
+          <div>{s.anmerkung}</div>
+        </div>
+      )}
 
       <div>
         <span style={{ color: T.faint }}>Erklärung bestätigt: </span>
@@ -916,7 +1012,7 @@ const Admin = ({ user, employees, profiles, onResetPin, onAddEmployee, onDelEmpl
               <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,1.5fr) minmax(0,1fr) minmax(0,1fr) auto', alignItems: 'center', padding: '11px 0', borderBottom: '1px solid ' + T.lineSoft, fontSize: 13, color: T.ink }}>
                 <span onClick={() => setOpenId(openId === emp.id ? null : emp.id)} style={{ cursor: 'pointer' }}>{emp.name}</span>
                 <span onClick={() => setOpenId(openId === emp.id ? null : emp.id)} style={{ color: T.muted, cursor: 'pointer' }}>{s?.position || '–'}</span>
-                <span onClick={() => setOpenId(openId === emp.id ? null : emp.id)} style={{ color: complete ? T.greenSoft : (s ? T.mauve : T.faint), fontWeight: 500, cursor: 'pointer' }}>{complete ? '✓ vollständig' : s ? 'teilweise' : 'ausstehend'}</span>
+                <span onClick={() => setOpenId(openId === emp.id ? null : emp.id)} style={{ color: s?.submitted ? T.green : complete ? T.greenSoft : (s ? T.mauve : T.faint), fontWeight: 500, cursor: 'pointer' }}>{s?.submitted ? '✓ übermittelt' : complete ? '✓ vollständig' : s ? 'teilweise' : 'ausstehend'}</span>
                 <span onClick={() => setOpenId(openId === emp.id ? null : emp.id)} style={{ color: T.faint, fontSize: 12, cursor: 'pointer' }}>{s?.updated || '–'}</span>
                 <span style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                   <button onClick={() => onPreviewEmployee(emp.id)} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '5px 10px', fontSize: 12, color: T.muted, cursor: 'pointer' }} title="Zeigt die Formular-Ansicht dieser Person read-only an">Vorschau</button>
