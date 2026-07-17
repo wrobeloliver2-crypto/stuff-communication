@@ -149,7 +149,7 @@ const PROFILE_REQUIRED_FIELDS = [
   'steuerId', 'steuerklasse', 'sozialversicherungsnummer', 'krankenkasse', 'iban', 'bic',
   'ersteintrittsdatum', 'position', 'vertragsform', 'urlaubsanspruch', 'email',
 ];
-const isProfileComplete = s => !!s && PROFILE_REQUIRED_FIELDS.every(f => (s[f] || '').toString().trim().length > 0) && !!s.vertrag && !!s.erklaerungBestaetigt && !!s.emailConsent;
+const isProfileComplete = s => !!s && PROFILE_REQUIRED_FIELDS.every(f => (s[f] || '').toString().trim().length > 0) && !!s.vertrag && !!s.erklaerungBestaetigt && !!s.emailConsent && !!s.dsgvoBestaetigt;
 
 // Wunsch vom 17.07.: Arbeitszeiten nur noch Mo–Fr (Sa/So raus) und statt
 // einer reinen Stundenzahl jeweils echte Uhrzeiten (von/bis) — sowohl die
@@ -468,6 +468,35 @@ const GreetingCard = ({ name }) => {
   );
 };
 
+// Datenschutzhinweis nach Art. 13 DSGVO — Wunsch vom 17.07. (Nachmittag):
+// fehlte bisher komplett im Formular, nur die separate E-Mail-Einwilligung
+// gab es schon. Entwurf, kein anwaltlich geprüfter Text — vor dem echten
+// Rollout idealerweise noch von Steuerberater/Datenschutzbeauftragtem
+// gegenchecken lassen (siehe Hinweis am Dokument-Ende).
+const DsgvoCard = ({ f, set }) => (
+  <div style={cardS}>
+    <p style={subLabel}>Datenschutzhinweis (Art. 13 DSGVO)</p>
+    <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.7, marginBottom: 12 }}>
+      <p style={{ margin: '0 0 8px' }}><strong>Verantwortlicher:</strong> Hanna Wrobel, PhysioPro Bad Schwartau, Segeberger Str. 1, 23617 Stockelsdorf · E-Mail: hanna.wrobel@pilatescompany.de</p>
+      <p style={{ margin: '0 0 8px' }}><strong>Zweck der Verarbeitung:</strong> Vorbereitung und Durchführung deines Beschäftigungsverhältnisses bei PhysioPro Bad Schwartau, insbesondere Personalverwaltung sowie Lohn- und Gehaltsabrechnung.</p>
+      <p style={{ margin: '0 0 8px' }}><strong>Rechtsgrundlage:</strong> Art. 6 Abs. 1 lit. b DSGVO (Erfüllung bzw. Anbahnung des Arbeitsverhältnisses) sowie, soweit gesetzlich vorgeschrieben, Art. 6 Abs. 1 lit. c DSGVO (z. B. steuer- und sozialversicherungsrechtliche Pflichten).</p>
+      <p style={{ margin: '0 0 8px' }}><strong>Empfänger:</strong> Deine Angaben werden ausschließlich intern sowie an unser Steuerbüro (BTR SUMUS) zur Lohn-/Gehaltsabrechnung weitergegeben, dazu an Krankenkassen, Finanzamt und Sozialversicherungsträger, soweit gesetzlich erforderlich. Keine Weitergabe an sonstige Dritte.</p>
+      <p style={{ margin: '0 0 8px' }}><strong>Speicherdauer:</strong> Für die Dauer des Beschäftigungsverhältnisses zzgl. gesetzlicher Aufbewahrungsfristen (i. d. R. bis zu 10 Jahre nach handels- und steuerrechtlichen Vorgaben).</p>
+      <p style={{ margin: '0 0 8px' }}><strong>Deine Rechte:</strong> Du hast das Recht auf Auskunft, Berichtigung, Löschung, Einschränkung der Verarbeitung, Datenübertragbarkeit und Widerspruch (Art. 15–21 DSGVO) sowie ein Beschwerderecht bei einer Datenschutz-Aufsichtsbehörde, z. B. dem Unabhängigen Landeszentrum für Datenschutz Schleswig-Holstein (ULD).</p>
+      <p style={{ margin: 0 }}><strong>Freiwilligkeit:</strong> Die abgefragten Angaben werden für die Anstellung und die Lohn-/Gehaltsabrechnung benötigt. Ohne diese Angaben kann dein Beschäftigungsverhältnis nicht ordnungsgemäß abgewickelt werden.</p>
+    </div>
+    <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 12.5, color: T.muted, lineHeight: 1.6, cursor: 'pointer' }}>
+      <input
+        type="checkbox"
+        checked={f.dsgvoBestaetigt}
+        onChange={e => { set('dsgvoBestaetigt', e.target.checked); if (e.target.checked && !f.dsgvoDatum) set('dsgvoDatum', new Date().toLocaleDateString('de-DE')); }}
+        style={{ marginTop: 2 }}
+      />
+      <span>Ich habe den Datenschutzhinweis zur Kenntnis genommen.{f.dsgvoDatum && <> <span style={{ color: T.faint }}>(bestätigt am {f.dsgvoDatum})</span></>}</span>
+    </label>
+  </div>
+);
+
 const ProfileForm = ({ existing, onSave, readOnly = false, employeeName = '' }) => {
   const blank = {
     nachname: '', vorname: '', geburtsname: '', geschlecht: '',
@@ -489,6 +518,7 @@ const ProfileForm = ({ existing, onSave, readOnly = false, employeeName = '' }) 
     vorbeschaeftigungen: [],
     vertrag: null, qualifikationen: [],
     erklaerungBestaetigt: false, erklaerungDatum: '',
+    dsgvoBestaetigt: false, dsgvoDatum: '',
     submitted: false, submittedAt: '',
   };
   const [f, setF] = useState({ ...blank, ...(existing || {}) });
@@ -569,6 +599,8 @@ const ProfileForm = ({ existing, onSave, readOnly = false, employeeName = '' }) 
       )}
 
       <div style={readOnly ? { pointerEvents: 'none', opacity: 0.75 } : undefined}>
+
+      <DsgvoCard f={f} set={set} />
 
       <div style={cardS}>
         <p style={subLabel}>Deine Rolle bei PhysioPro Bad Schwartau</p>
@@ -1016,6 +1048,10 @@ const ProfileDetail = ({ s }) => {
         </div>
       )}
 
+      <div>
+        <span style={{ color: T.faint }}>Datenschutzhinweis bestätigt: </span>
+        {s.dsgvoBestaetigt ? <span style={{ color: T.greenSoft }}>✓ ja{s.dsgvoDatum ? ` (${s.dsgvoDatum})` : ''}</span> : <span style={{ color: T.mauve }}>noch nicht</span>}
+      </div>
       <div>
         <span style={{ color: T.faint }}>Erklärung bestätigt: </span>
         {s.erklaerungBestaetigt ? <span style={{ color: T.greenSoft }}>✓ ja{s.erklaerungDatum ? ` (${s.erklaerungDatum})` : ''}</span> : <span style={{ color: T.mauve }}>noch nicht</span>}

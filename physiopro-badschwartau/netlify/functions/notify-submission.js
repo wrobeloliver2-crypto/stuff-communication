@@ -99,6 +99,7 @@ const buildSummary = (name, s) => {
   lines.push(`Bisherige WAZ / Gehalt: ${d(s.wazBisher)} Std. / ${d(s.gehaltBisher)} €`);
   if (s.anmerkung) { lines.push(''); lines.push('— Anmerkungen —'); lines.push(s.anmerkung); }
   lines.push('');
+  lines.push(`Datenschutzhinweis bestätigt: ${s.dsgvoBestaetigt ? 'ja' + (s.dsgvoDatum ? ' (' + s.dsgvoDatum + ')' : '') : 'NEIN'}`);
   lines.push(`Erklärung bestätigt: ${s.erklaerungBestaetigt ? 'ja' + (s.erklaerungDatum ? ' (' + s.erklaerungDatum + ')' : '') : 'NEIN'}`);
   return lines.join('\n');
 };
