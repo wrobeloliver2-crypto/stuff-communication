@@ -1,6 +1,6 @@
 const { sheetsGet, sheetsBatchGetAll, sheetsClearRange, sheetsUpdate, sheetsAppend, sheetsGetVersion, sheetsSetVersion } = require('./sheets_light');
 
-const ALL_COLLECTIONS = ['news', 'tools', 'messages', 'employees', 'audit', 'stammdaten'];
+const ALL_COLLECTIONS = ['news', 'tools', 'messages', 'employees', 'audit'];
 
 const HEADERS = {
   'Access-Control-Allow-Origin': '*',
