@@ -311,25 +311,11 @@ const App = () => {
   return null;
 };
 
-// Logo-Bildmarke nachgebaut (Klammer-/Sucher-Rahmen), passend zum
-// physioproluebeck.de-Markenauftritt — als SVG statt Rasterbild, damit sie
-// überall scharf bleibt.
-const LogoMark = ({ size = 34, color }) => (
-  <svg width={size} height={size} viewBox="0 0 100 100" aria-hidden="true">
-    <g fill="none" stroke={color} strokeWidth={9} strokeLinecap="square">
-      <path d="M6,32 V6 H32" />
-      <path d="M68,6 H94 V32" />
-      <path d="M94,68 V94 H68" />
-      <path d="M32,94 H6 V68" />
-    </g>
-  </svg>
-);
-
 const BrandHeader = ({ right }) => (
   <div style={{ background: T.surface, borderBottom: '1px solid ' + T.lineSoft }}>
     <div style={{ maxWidth: 1000, margin: '0 auto', padding: '1rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <LogoMark color={T.green} />
+        <img src="/logo.png" alt="PhysioPro" style={{ height: 44, width: 'auto' }} />
         <div>
           <p style={{ margin: 0, fontSize: 18, fontWeight: 600, color: T.ink, letterSpacing: '0.02em' }}>PhysioPro <span style={{ color: T.green }}>Bad Schwartau</span></p>
           <p style={{ margin: 0, fontSize: 11, color: T.faint, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Meine Daten</p>
