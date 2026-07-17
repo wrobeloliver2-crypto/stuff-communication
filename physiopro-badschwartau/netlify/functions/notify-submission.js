@@ -60,7 +60,15 @@ const buildSummary = (name, s) => {
   if (s.vertragsform === 'befristet_vz' || s.vertragsform === 'befristet_tz') {
     lines.push(`Befristet bis / Vertrag vom: ${d(s.befristetBis)} / ${d(s.befristetAbschluss)}`);
   }
-  lines.push(`Wochenarbeitszeit (Std./Tag): Mo ${d(s.moStd)} · Di ${d(s.diStd)} · Mi ${d(s.miStd)} · Do ${d(s.doStd)} · Fr ${d(s.frStd)} · Sa ${d(s.saStd)} · So ${d(s.soStd)}`);
+  const WOCHENTAGE = [['mo', 'Mo'], ['di', 'Di'], ['mi', 'Mi'], ['do', 'Do'], ['fr', 'Fr']];
+  const az = s.arbeitszeiten || {};
+  const azLine = WOCHENTAGE.map(([tag, label]) => {
+    const z = az[tag] || {};
+    const aktuell = z.aktuellVon || z.aktuellBis ? `${z.aktuellVon || '–'}-${z.aktuellBis || '–'}` : 'frei';
+    const wunsch = z.wunschVon || z.wunschBis ? `${z.wunschVon || '–'}-${z.wunschBis || '–'}` : 'frei';
+    return `${label} aktuell ${aktuell} / Wunsch ${wunsch}`;
+  }).join(' · ');
+  lines.push(`Arbeitszeiten (Mo–Fr): ${azLine}`);
   lines.push('');
   lines.push('— Schul- & Berufsausbildung —');
   lines.push(`Höchster Schulabschluss: ${lbl('schulabschluss', s.schulabschluss)}`);

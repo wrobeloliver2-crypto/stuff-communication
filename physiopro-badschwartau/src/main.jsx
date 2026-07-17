@@ -151,7 +151,22 @@ const PROFILE_REQUIRED_FIELDS = [
 ];
 const isProfileComplete = s => !!s && PROFILE_REQUIRED_FIELDS.every(f => (s[f] || '').toString().trim().length > 0) && !!s.vertrag && !!s.erklaerungBestaetigt && !!s.emailConsent;
 
-const WOCHENTAGE = [['moStd', 'Mo'], ['diStd', 'Di'], ['miStd', 'Mi'], ['doStd', 'Do'], ['frStd', 'Fr'], ['saStd', 'Sa'], ['soStd', 'So']];
+// Wunsch vom 17.07.: Arbeitszeiten nur noch Mo–Fr (Sa/So raus) und statt
+// einer reinen Stundenzahl jeweils echte Uhrzeiten (von/bis) — sowohl die
+// aktuellen als auch die gewünschten Arbeitszeiten, per Dropdown auswählbar.
+const WOCHENTAGE = [['mo', 'Montag'], ['di', 'Dienstag'], ['mi', 'Mittwoch'], ['do', 'Donnerstag'], ['fr', 'Freitag']];
+const leadingZero = n => (n < 10 ? '0' : '') + n;
+const TIME_OPTIONS = (() => {
+  const out = [];
+  for (let h = 6; h <= 21; h++) {
+    for (const m of [0, 30]) {
+      if (h === 21 && m === 30) continue;
+      out.push(`${leadingZero(h)}:${leadingZero(m)}`);
+    }
+  }
+  return out;
+})();
+const blankArbeitszeiten = () => Object.fromEntries(WOCHENTAGE.map(([k]) => [k, { aktuellVon: '', aktuellBis: '', wunschVon: '', wunschBis: '' }]));
 
 const App = () => {
   const [page, setPage] = useState('login');
@@ -468,7 +483,7 @@ const ProfileForm = ({ existing, onSave, readOnly = false, employeeName = '' }) 
     schulabschluss: '', berufsausbildung: '',
     urlaubsanspruch: '', vertragsform: '',
     befristetBis: '', befristetAbschluss: '',
-    moStd: '', diStd: '', miStd: '', doStd: '', frStd: '', saStd: '', soStd: '',
+    arbeitszeiten: blankArbeitszeiten(),
     wazBisher: '', gehaltBisher: '', anmerkung: '',
     vwl: '', vwlEmpfaenger: '', vwlBetrag: '', vwlAgAnteil: '', vwlSeit: '', vwlVertragsnr: '', vwlIban: '', vwlBic: '',
     vorbeschaeftigungen: [],
@@ -483,6 +498,12 @@ const ProfileForm = ({ existing, onSave, readOnly = false, employeeName = '' }) 
   const [transmitting, setTransmitting] = useState(false);
   const [transmitMsg, setTransmitMsg] = useState(null);
   const set = (k, v) => setF(prev => ({ ...prev, [k]: v }));
+  const setZeit = (tag, feld, v) => setF(prev => ({ ...prev, arbeitszeiten: { ...prev.arbeitszeiten, [tag]: { ...prev.arbeitszeiten[tag], [feld]: v } } }));
+  const uebernehmenTag = tag => setF(prev => ({ ...prev, arbeitszeiten: { ...prev.arbeitszeiten, [tag]: { ...prev.arbeitszeiten[tag], wunschVon: prev.arbeitszeiten[tag].aktuellVon, wunschBis: prev.arbeitszeiten[tag].aktuellBis } } }));
+  const uebernehmenAlle = () => setF(prev => ({
+    ...prev,
+    arbeitszeiten: Object.fromEntries(WOCHENTAGE.map(([tag]) => [tag, { ...prev.arbeitszeiten[tag], wunschVon: prev.arbeitszeiten[tag].aktuellVon, wunschBis: prev.arbeitszeiten[tag].aktuellBis }])),
+  }));
 
   const addKind = () => { if (f.kinder.length < 5) set('kinder', [...f.kinder, { name: '', vorname: '', geburtsdatum: '' }]); };
   const setKind = (i, k, v) => set('kinder', f.kinder.map((c, j) => j === i ? { ...c, [k]: v } : c));
@@ -681,15 +702,43 @@ const ProfileForm = ({ existing, onSave, readOnly = false, employeeName = '' }) 
             </div>
           </div>
         )}
-        <p style={{ fontSize: 11, color: T.faint, margin: '0 0 6px' }}>Verteilung der wöchentlichen Arbeitszeit (Stunden je Tag):</p>
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-          {WOCHENTAGE.map(([k, l]) => (
-            <div key={k} style={{ flex: 1 }}>
-              <label style={{ fontSize: 10, color: T.faint, display: 'block', textAlign: 'center' }}>{l}</label>
-              <input value={f[k]} onChange={e => set(k, e.target.value)} style={{ ...fieldS, marginBottom: 0, padding: '8px 6px', textAlign: 'center' }} />
-            </div>
-          ))}
+        <p style={{ fontSize: 11, color: T.faint, margin: '0 0 8px' }}>Aktuelle & gewünschte Arbeitszeiten (Mo–Fr) — bitte jeweils von/bis angeben. Ist ein Tag frei, einfach leer lassen.</p>
+        <div style={{ overflowX: 'auto', marginBottom: 4 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: 'left', padding: '0 8px 8px 0', color: T.faint, fontWeight: 500, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Tag</th>
+                <th colSpan={2} style={{ textAlign: 'center', padding: '0 0 8px', color: T.faint, fontWeight: 500, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Aktuell</th>
+                <th colSpan={2} style={{ textAlign: 'center', padding: '0 0 8px', color: T.faint, fontWeight: 500, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Wunsch</th>
+                <th style={{ padding: '0 0 8px' }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {WOCHENTAGE.map(([tag, label]) => {
+                const z = f.arbeitszeiten[tag] || { aktuellVon: '', aktuellBis: '', wunschVon: '', wunschBis: '' };
+                const timeSelect = (value, onChange) => (
+                  <select value={value} onChange={onChange} style={{ ...fieldS, marginBottom: 0, padding: '7px 6px', fontSize: 12.5, minWidth: 82 }}>
+                    <option value="">–</option>
+                    {TIME_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                );
+                return (
+                  <tr key={tag} style={{ borderTop: '1px solid ' + T.lineSoft }}>
+                    <td style={{ padding: '8px 8px 8px 0', color: T.ink }}>{label}</td>
+                    <td style={{ padding: '8px 4px' }}>{timeSelect(z.aktuellVon, e => setZeit(tag, 'aktuellVon', e.target.value))}</td>
+                    <td style={{ padding: '8px 4px' }}>{timeSelect(z.aktuellBis, e => setZeit(tag, 'aktuellBis', e.target.value))}</td>
+                    <td style={{ padding: '8px 4px' }}>{timeSelect(z.wunschVon, e => setZeit(tag, 'wunschVon', e.target.value))}</td>
+                    <td style={{ padding: '8px 4px' }}>{timeSelect(z.wunschBis, e => setZeit(tag, 'wunschBis', e.target.value))}</td>
+                    <td style={{ padding: '8px 0 8px 4px' }}>
+                      <button type="button" onClick={() => uebernehmenTag(tag)} title="Wunschzeit = aktuelle Zeit für diesen Tag" style={{ background: 'none', border: '1px dashed ' + T.line, borderRadius: 6, padding: '5px 8px', fontSize: 11, color: T.muted, cursor: 'pointer', whiteSpace: 'nowrap' }}>↳ übernehmen</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
+        <button type="button" onClick={uebernehmenAlle} style={{ background: 'none', border: '1px dashed ' + T.line, borderRadius: 8, padding: '6px 12px', fontSize: 12, color: T.muted, cursor: 'pointer' }}>+ Wunschzeiten = aktuelle Zeiten für alle Tage übernehmen</button>
       </div>
 
       <div style={cardS}>
@@ -902,8 +951,15 @@ const ProfileDetail = ({ s }) => {
           {befristet && <DetailRow label="Befristet bis / Vertrag vom" value={`${s.befristetBis || '–'} / ${s.befristetAbschluss || '–'}`} />}
         </div>
         <div style={{ marginTop: 8 }}>
-          <span style={{ color: T.faint, display: 'block', marginBottom: 4 }}>Wochenarbeitszeit (Std./Tag):</span>
-          <div style={{ display: 'flex', gap: 14 }}>{WOCHENTAGE.map(([k, l]) => <span key={k}>{l}: {s[k] || '–'}</span>)}</div>
+          <span style={{ color: T.faint, display: 'block', marginBottom: 4 }}>Arbeitszeiten (Mo–Fr):</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {WOCHENTAGE.map(([tag, label]) => {
+              const z = (s.arbeitszeiten && s.arbeitszeiten[tag]) || {};
+              const aktuell = z.aktuellVon || z.aktuellBis ? `${z.aktuellVon || '–'}–${z.aktuellBis || '–'}` : 'frei';
+              const wunsch = z.wunschVon || z.wunschBis ? `${z.wunschVon || '–'}–${z.wunschBis || '–'}` : 'frei';
+              return <span key={tag}>{label}: aktuell {aktuell} · Wunsch {wunsch}</span>;
+            })}
+          </div>
         </div>
       </div>
 
