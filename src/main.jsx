@@ -929,31 +929,64 @@ const ToolsList = ({ tools }) => (
   </div>
 );
 
+// Abgeglichen mit dem offiziellen Personalfragebogen (BTR SUMUS, Stand
+// 07/2023), den das Lohnbüro tatsächlich für DATEV braucht — siehe Analyse
+// vom 17.07.2026. Grau hinterlegte Felder aus dem Original (Personalnummer,
+// Kostenstelle, Abt.-Nummer, Personengruppe, UV-Gefahrentarif, DEÜV-Status,
+// KV/RV/AV/PV-Beitragscodes) sind dort explizit "vom Arbeitgeber
+// auszufüllen" und daher bewusst NICHT Teil dieses Mitarbeiter-Formulars.
+// "Sozialkasse — Bau" / "im Baugewerbe beschäftigt seit" sind
+// Bau-Branchen-spezifisch und für Physio/Pilates irrelevant.
+//
 // Pflichtfelder für den Status "vollständig" (Ampel für die Verwaltung vor
-// den Mitarbeitergesprächen). Bewusst NICHT "Schwerbehinderung" oder
-// "Nebentätigkeit" — das sind freiwillige bzw. situationsabhängige Angaben,
-// deren Fehlen nicht "unvollständig" bedeuten soll.
-// "kontoinhaber" bewusst NICHT hier: laut Formular nur auszufüllen, wenn das
-// Konto nicht auf die eigene Person läuft ("falls abweichend") — ein leeres
-// Feld ist dort der Normalfall, nicht ein fehlender Wert.
-const STAMMDATEN_REQUIRED_FIELDS = ['strasse', 'plz', 'ort', 'geburtsdatum', 'steuerId', 'steuerklasse', 'sozialversicherungsnummer', 'krankenkasse', 'iban'];
-const isStammdatenComplete = s => !!s && STAMMDATEN_REQUIRED_FIELDS.every(f => (s[f] || '').toString().trim().length > 0) && !!s.vertrag;
+// den Mitarbeitergesprächen). Bewusst NICHT Pflicht: Geburtsname (nur falls
+// abweichend), Konfession (wird häufig automatisch per ELStAM ermittelt),
+// Kontoinhaber (nur falls abweichend), Schwerbehinderung/Nebentätigkeit
+// (situationsabhängig), VWL und Vorbeschäftigungszeiten (nur falls
+// zutreffend), Kinder-Liste (nur falls vorhanden).
+const STAMMDATEN_REQUIRED_FIELDS = [
+  'strasse', 'plz', 'ort', 'geburtsdatum', 'geschlecht', 'geburtsort', 'geburtsland', 'staatsangehoerigkeit',
+  'steuerId', 'steuerklasse', 'sozialversicherungsnummer', 'krankenkasse', 'iban', 'bic',
+  'ersteintrittsdatum', 'berufsbezeichnung', 'vertragsform', 'urlaubsanspruch',
+];
+const isStammdatenComplete = s => !!s && STAMMDATEN_REQUIRED_FIELDS.every(f => (s[f] || '').toString().trim().length > 0) && !!s.vertrag && !!s.erklaerungBestaetigt;
+
+const WOCHENTAGE = [['moStd', 'Mo'], ['diStd', 'Di'], ['miStd', 'Mi'], ['doStd', 'Do'], ['frStd', 'Fr'], ['saStd', 'Sa'], ['soStd', 'So']];
 
 const StammdatenForm = ({ existing, onSave }) => {
   const blank = {
-    strasse: '', plz: '', ort: '', geburtsdatum: '',
-    steuerId: '', steuerklasse: '', familienstand: '', kinderfreibetraege: '',
+    nachname: '', vorname: '', geburtsname: '', geschlecht: '',
+    strasse: '', plz: '', ort: '', geburtsdatum: '', geburtsort: '', geburtsland: '', staatsangehoerigkeit: '',
+    steuerId: '', steuerklasse: '', familienstand: '', kinderfreibetraege: '', konfession: '',
     sozialversicherungsnummer: '', krankenkasse: '',
-    iban: '', kontoinhaber: '',
+    iban: '', bic: '', kontoinhaber: '',
     schwerbehinderung: '', nebentaetigkeit: '',
+    kinder: [],
+    ersteintrittsdatum: '', berufsbezeichnung: '', taetigkeit: '',
+    beschaeftigungsart: '', geringfuegig: '',
+    schulabschluss: '', berufsausbildung: '',
+    urlaubsanspruch: '', vertragsform: '',
+    befristetBis: '', befristetSchriftlich: '', befristetAbschluss: '',
+    moStd: '', diStd: '', miStd: '', doStd: '', frStd: '', saStd: '', soStd: '',
     wazBisher: '', gehaltBisher: '', anmerkung: '',
+    vwl: '', vwlEmpfaenger: '', vwlBetrag: '', vwlAgAnteil: '', vwlSeit: '', vwlVertragsnr: '', vwlIban: '', vwlBic: '',
+    vorbeschaeftigungen: [],
     vertrag: null, qualifikationen: [],
+    erklaerungBestaetigt: false, erklaerungDatum: '',
   };
   const [f, setF] = useState({ ...blank, ...(existing || {}) });
   const [qLabel, setQLabel] = useState('');
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState(null);
   const set = (k, v) => setF(prev => ({ ...prev, [k]: v }));
+
+  const addKind = () => { if (f.kinder.length < 5) set('kinder', [...f.kinder, { name: '', vorname: '', geburtsdatum: '' }]); };
+  const setKind = (i, k, v) => set('kinder', f.kinder.map((c, j) => j === i ? { ...c, [k]: v } : c));
+  const delKind = i => set('kinder', f.kinder.filter((_, j) => j !== i));
+
+  const addVorbesch = () => set('vorbeschaeftigungen', [...f.vorbeschaeftigungen, { von: '', bis: '', art: '', tage: '' }]);
+  const setVorbesch = (i, k, v) => set('vorbeschaeftigungen', f.vorbeschaeftigungen.map((c, j) => j === i ? { ...c, [k]: v } : c));
+  const delVorbesch = i => set('vorbeschaeftigungen', f.vorbeschaeftigungen.filter((_, j) => j !== i));
 
   const submit = async () => {
     setSaving(true);
@@ -966,33 +999,54 @@ const StammdatenForm = ({ existing, onSave }) => {
   };
 
   const complete = isStammdatenComplete(f);
+  const befristet = f.vertragsform === 'befristet_vz' || f.vertragsform === 'befristet_tz';
 
   return (
     <div>
       <Label>Meine Stammdaten</Label>
       <p style={{ fontSize: 12, color: T.muted, margin: '-0.4rem 0 1.2rem', lineHeight: 1.6 }}>
-        Grundlage für dein Mitarbeitergespräch und die künftige Lohn-/Gehaltsabrechnung. Bitte vollständig ausfüllen — du kannst jederzeit zurückkommen und ergänzen, nichts geht verloren.
+        Grundlage für dein Mitarbeitergespräch und die künftige Lohn-/Gehaltsabrechnung (entspricht dem Personalfragebogen unseres Lohnbüros). Bitte vollständig ausfüllen — du kannst jederzeit zurückkommen und ergänzen, nichts geht verloren.
       </p>
       {!complete && (
         <div style={{ background: '#fdf3ea', border: '1px solid ' + T.mauveSoft, borderRadius: 10, padding: '10px 14px', fontSize: 12, color: T.muted, marginBottom: 16 }}>
-          Noch nicht vollständig — Pflichtfelder unten sowie der Arbeitsvertrag-Upload fehlen noch teilweise.
+          Noch nicht vollständig — Pflichtfelder unten, der Arbeitsvertrag-Upload sowie die Bestätigung am Ende fehlen noch teilweise.
         </div>
       )}
 
       <div style={cardS}>
         <p style={subLabel}>Persönliche Daten</p>
         <div style={{ display: 'flex', gap: 12 }}>
+          <input value={f.nachname} onChange={e => set('nachname', e.target.value)} placeholder="Nachname" style={{ ...fieldS, flex: 1 }} />
+          <input value={f.vorname} onChange={e => set('vorname', e.target.value)} placeholder="Vorname" style={{ ...fieldS, flex: 1 }} />
+          <input value={f.geburtsname} onChange={e => set('geburtsname', e.target.value)} placeholder="Geburtsname (falls abweichend)" style={{ ...fieldS, flex: 1 }} />
+        </div>
+        <div style={{ display: 'flex', gap: 12 }}>
           <input value={f.strasse} onChange={e => set('strasse', e.target.value)} placeholder="Straße & Hausnummer" style={{ ...fieldS, flex: 2 }} />
           <input value={f.plz} onChange={e => set('plz', e.target.value)} placeholder="PLZ" style={{ ...fieldS, flex: 1 }} />
           <input value={f.ort} onChange={e => set('ort', e.target.value)} placeholder="Ort" style={{ ...fieldS, flex: 1.5 }} />
         </div>
-        <input type="date" value={f.geburtsdatum} onChange={e => set('geburtsdatum', e.target.value)} style={fieldS} />
+        <div style={{ display: 'flex', gap: 12 }}>
+          <input type="date" value={f.geburtsdatum} onChange={e => set('geburtsdatum', e.target.value)} style={{ ...fieldS, flex: 1 }} />
+          <select value={f.geschlecht} onChange={e => set('geschlecht', e.target.value)} style={{ ...fieldS, flex: 1 }}>
+            <option value="">Geschlecht …</option>
+            <option value="maennlich">männlich</option>
+            <option value="weiblich">weiblich</option>
+            <option value="divers">divers</option>
+            <option value="unbestimmt">unbestimmt</option>
+          </select>
+        </div>
+        <div style={{ display: 'flex', gap: 12 }}>
+          <input value={f.geburtsort} onChange={e => set('geburtsort', e.target.value)} placeholder="Geburtsort" style={{ ...fieldS, flex: 1 }} />
+          <input value={f.geburtsland} onChange={e => set('geburtsland', e.target.value)} placeholder="Geburtsland" style={{ ...fieldS, flex: 1 }} />
+          <input value={f.staatsangehoerigkeit} onChange={e => set('staatsangehoerigkeit', e.target.value)} placeholder="Staatsangehörigkeit" style={{ ...fieldS, flex: 1 }} />
+        </div>
         <div style={{ display: 'flex', gap: 12 }}>
           <input value={f.steuerId} onChange={e => set('steuerId', e.target.value)} placeholder="Steuer-ID" style={{ ...fieldS, flex: 1 }} />
           <select value={f.steuerklasse} onChange={e => set('steuerklasse', e.target.value)} style={{ ...fieldS, flex: 1 }}>
             <option value="">Steuerklasse …</option>
             {['I', 'II', 'III', 'IV', 'V', 'VI'].map(k => <option key={k} value={k}>{k}</option>)}
           </select>
+          <input value={f.konfession} onChange={e => set('konfession', e.target.value)} placeholder="Konfession (optional)" style={{ ...fieldS, flex: 1 }} />
         </div>
         <div style={{ display: 'flex', gap: 12 }}>
           <select value={f.familienstand} onChange={e => set('familienstand', e.target.value)} style={{ ...fieldS, flex: 1 }}>
@@ -1007,6 +1061,7 @@ const StammdatenForm = ({ existing, onSave }) => {
         </div>
         <div style={{ display: 'flex', gap: 12 }}>
           <input value={f.iban} onChange={e => set('iban', e.target.value)} placeholder="IBAN" style={{ ...fieldS, flex: 1.3 }} />
+          <input value={f.bic} onChange={e => set('bic', e.target.value)} placeholder="BIC" style={{ ...fieldS, flex: 1 }} />
           <input value={f.kontoinhaber} onChange={e => set('kontoinhaber', e.target.value)} placeholder="Kontoinhaber (falls abweichend)" style={{ ...fieldS, flex: 1 }} />
         </div>
         <select value={f.schwerbehinderung} onChange={e => set('schwerbehinderung', e.target.value)} style={fieldS}>
@@ -1014,6 +1069,102 @@ const StammdatenForm = ({ existing, onSave }) => {
           <option value="ja">Ja</option>
           <option value="nein">Nein</option>
         </select>
+      </div>
+
+      <div style={cardS}>
+        <p style={subLabel}>Kinder mit nachweisbarer Elterneigenschaft</p>
+        <p style={{ fontSize: 12, color: T.muted, margin: '0 0 10px', lineHeight: 1.6 }}>Nur falls vorhanden — relevant u. a. für die Pflegeversicherung.</p>
+        {f.kinder.map((k, i) => (
+          <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 8 }}>
+            <input value={k.name} onChange={e => setKind(i, 'name', e.target.value)} placeholder="Nachname" style={{ ...fieldS, marginBottom: 0, flex: 1 }} />
+            <input value={k.vorname} onChange={e => setKind(i, 'vorname', e.target.value)} placeholder="Vorname" style={{ ...fieldS, marginBottom: 0, flex: 1 }} />
+            <input type="date" value={k.geburtsdatum} onChange={e => setKind(i, 'geburtsdatum', e.target.value)} style={{ ...fieldS, marginBottom: 0, flex: 1 }} />
+            <button onClick={() => delKind(i)} style={{ background: 'none', border: 'none', color: T.faint, fontSize: 12, cursor: 'pointer' }}>entfernen</button>
+          </div>
+        ))}
+        {f.kinder.length < 5 && <button onClick={addKind} style={{ background: 'none', border: '1px dashed ' + T.line, borderRadius: 8, padding: '6px 12px', fontSize: 12, color: T.muted, cursor: 'pointer' }}>+ Kind hinzufügen</button>}
+      </div>
+
+      <div style={cardS}>
+        <p style={subLabel}>Beschäftigung</p>
+        <input type="date" value={f.ersteintrittsdatum} onChange={e => set('ersteintrittsdatum', e.target.value)} style={fieldS} placeholder="Ersteintrittsdatum" />
+        <p style={{ fontSize: 11, color: T.faint, margin: '-6px 0 12px' }}>Erstes Eintrittsdatum bei PHYSIO PLUS GmbH (nicht das Datum der Übernahme) — deine Betriebszugehörigkeit bleibt nach §613a BGB erhalten und wirkt sich u. a. auf Urlaubsanspruch und Kündigungsfristen aus.</p>
+        <div style={{ display: 'flex', gap: 12 }}>
+          <input value={f.berufsbezeichnung} onChange={e => set('berufsbezeichnung', e.target.value)} placeholder="Berufsbezeichnung" style={{ ...fieldS, flex: 1 }} />
+          <input value={f.taetigkeit} onChange={e => set('taetigkeit', e.target.value)} placeholder="Ausgeübte Tätigkeit" style={{ ...fieldS, flex: 1 }} />
+        </div>
+        <div style={{ display: 'flex', gap: 12 }}>
+          <select value={f.beschaeftigungsart} onChange={e => set('beschaeftigungsart', e.target.value)} style={{ ...fieldS, flex: 1 }}>
+            <option value="">Haupt- oder Nebenbeschäftigung?</option>
+            <option value="haupt">Hauptbeschäftigung</option>
+            <option value="neben">Nebenbeschäftigung</option>
+          </select>
+          <select value={f.geringfuegig} onChange={e => set('geringfuegig', e.target.value)} style={{ ...fieldS, flex: 1 }}>
+            <option value="">Geringfügige Beschäftigung (Minijob)?</option>
+            <option value="ja">Ja</option>
+            <option value="nein">Nein</option>
+          </select>
+        </div>
+        <select value={f.nebentaetigkeit} onChange={e => set('nebentaetigkeit', e.target.value)} style={fieldS}>
+          <option value="">Übst du (an anderer Stelle) weitere Beschäftigungen aus?</option>
+          <option value="ja">Ja</option>
+          <option value="nein">Nein</option>
+        </select>
+        <div style={{ display: 'flex', gap: 12 }}>
+          <select value={f.vertragsform} onChange={e => set('vertragsform', e.target.value)} style={{ ...fieldS, flex: 1 }}>
+            <option value="">Vertragsform …</option>
+            <option value="unbefristet_vz">Unbefristet, Vollzeit</option>
+            <option value="unbefristet_tz">Unbefristet, Teilzeit</option>
+            <option value="befristet_vz">Befristet, Vollzeit</option>
+            <option value="befristet_tz">Befristet, Teilzeit</option>
+          </select>
+          <input value={f.urlaubsanspruch} onChange={e => set('urlaubsanspruch', e.target.value)} placeholder="Urlaubsanspruch (Tage/Kalenderjahr)" style={{ ...fieldS, flex: 1 }} />
+        </div>
+        {befristet && (
+          <div style={{ background: T.linen ? T.linen : T.bg, border: '1px solid ' + T.line, borderRadius: 8, padding: '10px 12px', marginBottom: 12 }}>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 11, color: T.faint }}>Befristet bis</label>
+                <input type="date" value={f.befristetBis} onChange={e => set('befristetBis', e.target.value)} style={{ ...fieldS, marginBottom: 0 }} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 11, color: T.faint }}>Schriftlicher Vertrag abgeschlossen am</label>
+                <input type="date" value={f.befristetAbschluss} onChange={e => set('befristetAbschluss', e.target.value)} style={{ ...fieldS, marginBottom: 0 }} />
+              </div>
+            </div>
+          </div>
+        )}
+        <p style={{ fontSize: 11, color: T.faint, margin: '0 0 6px' }}>Verteilung der wöchentlichen Arbeitszeit (Stunden je Tag):</p>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          {WOCHENTAGE.map(([k, l]) => (
+            <div key={k} style={{ flex: 1 }}>
+              <label style={{ fontSize: 10, color: T.faint, display: 'block', textAlign: 'center' }}>{l}</label>
+              <input value={f[k]} onChange={e => set(k, e.target.value)} style={{ ...fieldS, marginBottom: 0, padding: '8px 6px', textAlign: 'center' }} />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={cardS}>
+        <p style={subLabel}>Schul- & Berufsausbildung</p>
+        <div style={{ display: 'flex', gap: 12 }}>
+          <select value={f.schulabschluss} onChange={e => set('schulabschluss', e.target.value)} style={{ ...fieldS, flex: 1 }}>
+            <option value="">Höchster Schulabschluss …</option>
+            <option value="ohne">ohne Schulabschluss</option>
+            <option value="haupt_volksschule">Haupt-/Volksschulabschluss</option>
+            <option value="mittlere_reife">Mittlere Reife/gleichwertig</option>
+            <option value="abitur">Abitur/Fachabitur</option>
+          </select>
+          <select value={f.berufsausbildung} onChange={e => set('berufsausbildung', e.target.value)} style={{ ...fieldS, flex: 1 }}>
+            <option value="">Höchste Berufsausbildung …</option>
+            <option value="ohne">ohne beruflichen Ausbildungsabschluss</option>
+            <option value="ausbildung">Anerkannte Berufsausbildung</option>
+            <option value="meister">Meister/Techniker/gleichwertig</option>
+            <option value="bachelor">Bachelor</option>
+            <option value="diplom_master">Diplom/Magister/Master/Staatsexamen</option>
+            <option value="promotion">Promotion</option>
+          </select>
+        </div>
       </div>
 
       <div style={cardS}>
@@ -1047,18 +1198,68 @@ const StammdatenForm = ({ existing, onSave }) => {
       </div>
 
       <div style={cardS}>
-        <p style={subLabel}>Für die Gehaltsabrechnung</p>
-        <select value={f.nebentaetigkeit} onChange={e => set('nebentaetigkeit', e.target.value)} style={fieldS}>
-          <option value="">Nebentätigkeit?</option>
+        <p style={subLabel}>Vermögenswirksame Leistungen (VWL)</p>
+        <select value={f.vwl} onChange={e => set('vwl', e.target.value)} style={fieldS}>
+          <option value="">Erhältst du VWL? Nur ausfüllen, falls ein Vertrag vorliegt.</option>
           <option value="ja">Ja</option>
           <option value="nein">Nein</option>
         </select>
+        {f.vwl === 'ja' && (
+          <>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <input value={f.vwlEmpfaenger} onChange={e => set('vwlEmpfaenger', e.target.value)} placeholder="Empfänger (z. B. Bausparkasse)" style={{ ...fieldS, flex: 1 }} />
+              <input value={f.vwlVertragsnr} onChange={e => set('vwlVertragsnr', e.target.value)} placeholder="Vertragsnummer" style={{ ...fieldS, flex: 1 }} />
+            </div>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <input value={f.vwlBetrag} onChange={e => set('vwlBetrag', e.target.value)} placeholder="Betrag (€/Mon.)" style={{ ...fieldS, flex: 1 }} />
+              <input value={f.vwlAgAnteil} onChange={e => set('vwlAgAnteil', e.target.value)} placeholder="AG-Anteil (€/Mon.)" style={{ ...fieldS, flex: 1 }} />
+              <input type="date" value={f.vwlSeit} onChange={e => set('vwlSeit', e.target.value)} style={{ ...fieldS, flex: 1 }} />
+            </div>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <input value={f.vwlIban} onChange={e => set('vwlIban', e.target.value)} placeholder="IBAN (VWL-Konto)" style={{ ...fieldS, flex: 1 }} />
+              <input value={f.vwlBic} onChange={e => set('vwlBic', e.target.value)} placeholder="BIC (VWL-Konto)" style={{ ...fieldS, flex: 1 }} />
+            </div>
+          </>
+        )}
+      </div>
+
+      <div style={cardS}>
+        <p style={subLabel}>Vorbeschäftigungszeiten im laufenden Kalenderjahr</p>
+        <p style={{ fontSize: 12, color: T.muted, margin: '0 0 10px', lineHeight: 1.6 }}>Falls du dieses Jahr bereits woanders steuerpflichtig beschäftigt warst.</p>
+        {f.vorbeschaeftigungen.map((v, i) => (
+          <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 8 }}>
+            <input type="date" value={v.von} onChange={e => setVorbesch(i, 'von', e.target.value)} style={{ ...fieldS, marginBottom: 0, flex: 1 }} />
+            <input type="date" value={v.bis} onChange={e => setVorbesch(i, 'bis', e.target.value)} style={{ ...fieldS, marginBottom: 0, flex: 1 }} />
+            <input value={v.art} onChange={e => setVorbesch(i, 'art', e.target.value)} placeholder="Art der Beschäftigung" style={{ ...fieldS, marginBottom: 0, flex: 1.5 }} />
+            <input value={v.tage} onChange={e => setVorbesch(i, 'tage', e.target.value)} placeholder="Tage" style={{ ...fieldS, marginBottom: 0, flex: 0.6 }} />
+            <button onClick={() => delVorbesch(i)} style={{ background: 'none', border: 'none', color: T.faint, fontSize: 12, cursor: 'pointer' }}>entfernen</button>
+          </div>
+        ))}
+        <button onClick={addVorbesch} style={{ background: 'none', border: '1px dashed ' + T.line, borderRadius: 8, padding: '6px 12px', fontSize: 12, color: T.muted, cursor: 'pointer' }}>+ Zeitraum hinzufügen</button>
+      </div>
+
+      <div style={cardS}>
+        <p style={subLabel}>Für die Gehaltsabrechnung</p>
         <div style={{ display: 'flex', gap: 12 }}>
-          <input value={f.wazBisher} onChange={e => set('wazBisher', e.target.value)} placeholder="Bisherige Wochenarbeitszeit (Std.)" style={{ ...fieldS, flex: 1 }} />
+          <input value={f.wazBisher} onChange={e => set('wazBisher', e.target.value)} placeholder="Bisherige Wochenarbeitszeit gesamt (Std.)" style={{ ...fieldS, flex: 1 }} />
           <input value={f.gehaltBisher} onChange={e => set('gehaltBisher', e.target.value)} placeholder="Bisheriges Gehalt (€, brutto)" style={{ ...fieldS, flex: 1 }} />
         </div>
         <p style={{ fontSize: 11, color: T.faint, margin: '-6px 0 12px' }}>Bitte laut deinem bisherigen Arbeitsvertrag angeben — wird im Gespräch abgeglichen.</p>
         <textarea value={f.anmerkung} onChange={e => set('anmerkung', e.target.value)} placeholder="Anmerkungen (optional)" rows={3} style={{ ...fieldS, fontFamily: 'inherit', resize: 'vertical' }} />
+      </div>
+
+      <div style={cardS}>
+        <p style={subLabel}>Erklärung</p>
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 12.5, color: T.muted, lineHeight: 1.6, cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={f.erklaerungBestaetigt}
+            onChange={e => { set('erklaerungBestaetigt', e.target.checked); if (e.target.checked && !f.erklaerungDatum) set('erklaerungDatum', new Date().toLocaleDateString('de-DE')); }}
+            style={{ marginTop: 2 }}
+          />
+          <span>Ich versichere, dass die vorstehenden Angaben der Wahrheit entsprechen. Ich verpflichte mich, meinem Arbeitgeber alle Änderungen, insbesondere in Bezug auf weitere Beschäftigungen (Art, Dauer und Entgelt), unverzüglich mitzuteilen.{f.erklaerungDatum && <> <span style={{ color: T.faint }}>(bestätigt am {f.erklaerungDatum})</span></>}</span>
+        </label>
+        <p style={{ fontSize: 11, color: T.faint, margin: '8px 0 0' }}>Diese digitale Bestätigung ersetzt keine ggf. gesondert erforderliche handschriftliche Unterschrift auf dem Arbeitsvertrag selbst.</p>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -1662,6 +1863,134 @@ const AdminTeamAdd = ({ onAdd }) => {
 // Übersicht für die Verwaltung: wer hat seine Stammdaten (Adresse, Steuer-ID,
 // IBAN, Arbeitsvertrag …) schon eingegeben — direkte Vorbereitung für die
 // strukturierten Mitarbeitergespräche im Zuge der §613a-Übernahme.
+// Kompakte Beschriftung für Auswahlfelder, deren gespeicherter Wert ein
+// interner Code ist (z. B. "befristet_vz") statt eines lesbaren Textes.
+const LABELS = {
+  geschlecht: { maennlich: 'männlich', weiblich: 'weiblich', divers: 'divers', unbestimmt: 'unbestimmt' },
+  vertragsform: { unbefristet_vz: 'Unbefristet, Vollzeit', unbefristet_tz: 'Unbefristet, Teilzeit', befristet_vz: 'Befristet, Vollzeit', befristet_tz: 'Befristet, Teilzeit' },
+  beschaeftigungsart: { haupt: 'Hauptbeschäftigung', neben: 'Nebenbeschäftigung' },
+  schulabschluss: { ohne: 'ohne Schulabschluss', haupt_volksschule: 'Haupt-/Volksschulabschluss', mittlere_reife: 'Mittlere Reife/gleichwertig', abitur: 'Abitur/Fachabitur' },
+  berufsausbildung: { ohne: 'ohne beruflichen Ausbildungsabschluss', ausbildung: 'Anerkannte Berufsausbildung', meister: 'Meister/Techniker/gleichwertig', bachelor: 'Bachelor', diplom_master: 'Diplom/Magister/Master/Staatsexamen', promotion: 'Promotion' },
+};
+const lbl = (field, v) => (v && LABELS[field] && LABELS[field][v]) || v || '–';
+
+const DetailRow = ({ label, value, full }) => (
+  <div style={full ? { gridColumn: '1 / -1' } : undefined}><span style={{ color: T.faint }}>{label}: </span>{value}</div>
+);
+
+const StammdatenDetail = ({ s }) => {
+  const befristet = s.vertragsform === 'befristet_vz' || s.vertragsform === 'befristet_tz';
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18, fontSize: 13 }}>
+
+      <div>
+        <p style={subLabel}>Persönliche Daten</p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 24px' }}>
+          <DetailRow label="Name" value={[s.vorname, s.nachname].filter(Boolean).join(' ') || '–'} />
+          <DetailRow label="Geburtsname" value={s.geburtsname || '–'} />
+          <DetailRow label="Geschlecht" value={lbl('geschlecht', s.geschlecht)} />
+          <DetailRow label="Adresse" value={`${s.strasse || '–'}, ${s.plz || ''} ${s.ort || ''}`} />
+          <DetailRow label="Geburtsdatum" value={s.geburtsdatum || '–'} />
+          <DetailRow label="Geburtsort / -land" value={`${s.geburtsort || '–'} / ${s.geburtsland || '–'}`} />
+          <DetailRow label="Staatsangehörigkeit" value={s.staatsangehoerigkeit || '–'} />
+          <DetailRow label="Steuer-ID / Klasse" value={`${s.steuerId || '–'} / ${s.steuerklasse || '–'}`} />
+          <DetailRow label="Konfession" value={s.konfession || '–'} />
+          <DetailRow label="Familienstand" value={`${s.familienstand || '–'} · Kinderfreibeträge: ${s.kinderfreibetraege || '–'}`} />
+          <DetailRow label="Sozialversicherungsnr." value={s.sozialversicherungsnummer || '–'} />
+          <DetailRow label="Krankenkasse" value={s.krankenkasse || '–'} />
+          <DetailRow label="IBAN / BIC" value={`${s.iban || '–'} / ${s.bic || '–'}`} />
+          <DetailRow label="Kontoinhaber" value={s.kontoinhaber || 'wie oben'} />
+          <DetailRow label="Schwerbehinderung" value={s.schwerbehinderung || 'keine Angabe'} />
+        </div>
+      </div>
+
+      {(s.kinder || []).length > 0 && (
+        <div>
+          <p style={subLabel}>Kinder mit nachweisbarer Elterneigenschaft</p>
+          {s.kinder.map((k, i) => (
+            <div key={i} style={{ marginBottom: 2 }}>{[k.vorname, k.name].filter(Boolean).join(' ') || '–'}{k.geburtsdatum ? ` · geb. ${k.geburtsdatum}` : ''}</div>
+          ))}
+        </div>
+      )}
+
+      <div>
+        <p style={subLabel}>Beschäftigung</p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 24px' }}>
+          <DetailRow label="Ersteintrittsdatum (§613a)" value={s.ersteintrittsdatum || '–'} />
+          <DetailRow label="Berufsbezeichnung" value={s.berufsbezeichnung || '–'} />
+          <DetailRow label="Ausgeübte Tätigkeit" value={s.taetigkeit || '–'} />
+          <DetailRow label="Haupt-/Nebenbeschäftigung" value={lbl('beschaeftigungsart', s.beschaeftigungsart)} />
+          <DetailRow label="Geringfügig (Minijob)" value={s.geringfuegig || '–'} />
+          <DetailRow label="Weitere Beschäftigung anderswo" value={s.nebentaetigkeit || '–'} />
+          <DetailRow label="Vertragsform" value={lbl('vertragsform', s.vertragsform)} />
+          <DetailRow label="Urlaubsanspruch" value={s.urlaubsanspruch ? s.urlaubsanspruch + ' Tage/Jahr' : '–'} />
+          {befristet && <DetailRow label="Befristet bis / Vertrag vom" value={`${s.befristetBis || '–'} / ${s.befristetAbschluss || '–'}`} />}
+        </div>
+        <div style={{ marginTop: 8 }}>
+          <span style={{ color: T.faint, display: 'block', marginBottom: 4 }}>Wochenarbeitszeit (Std./Tag):</span>
+          <div style={{ display: 'flex', gap: 14 }}>
+            {WOCHENTAGE.map(([k, l]) => <span key={k}>{l}: {s[k] || '–'}</span>)}
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <p style={subLabel}>Schul- & Berufsausbildung</p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 24px' }}>
+          <DetailRow label="Höchster Schulabschluss" value={lbl('schulabschluss', s.schulabschluss)} />
+          <DetailRow label="Höchste Berufsausbildung" value={lbl('berufsausbildung', s.berufsausbildung)} />
+        </div>
+      </div>
+
+      <div>
+        <span style={{ color: T.faint, display: 'block', marginBottom: 4 }}>Arbeitsvertrag:</span>
+        {s.vertrag ? <FileChip name={s.vertrag.name} url={s.vertrag.url} /> : <span style={{ color: T.faint }}>fehlt</span>}
+      </div>
+
+      <div>
+        <span style={{ color: T.faint, display: 'block', marginBottom: 4 }}>Qualifikationen & Urkunden ({(s.qualifikationen || []).length}):</span>
+        {(s.qualifikationen || []).length === 0 && <span style={{ color: T.faint }}>keine</span>}
+        {(s.qualifikationen || []).map((q, i) => <FileChip key={i} name={q.bezeichnung ? q.bezeichnung + ' — ' + q.name : q.name} url={q.url} />)}
+      </div>
+
+      {s.vwl === 'ja' && (
+        <div>
+          <p style={subLabel}>Vermögenswirksame Leistungen (VWL)</p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 24px' }}>
+            <DetailRow label="Empfänger" value={s.vwlEmpfaenger || '–'} />
+            <DetailRow label="Vertragsnummer" value={s.vwlVertragsnr || '–'} />
+            <DetailRow label="Betrag / AG-Anteil" value={`${s.vwlBetrag || '–'} € / ${s.vwlAgAnteil || '–'} €`} />
+            <DetailRow label="Seit" value={s.vwlSeit || '–'} />
+            <DetailRow label="IBAN / BIC (VWL)" value={`${s.vwlIban || '–'} / ${s.vwlBic || '–'}`} />
+          </div>
+        </div>
+      )}
+
+      {(s.vorbeschaeftigungen || []).length > 0 && (
+        <div>
+          <p style={subLabel}>Vorbeschäftigungszeiten im laufenden Kalenderjahr</p>
+          {s.vorbeschaeftigungen.map((v, i) => (
+            <div key={i} style={{ marginBottom: 2 }}>{v.von || '–'} bis {v.bis || '–'} · {v.art || '–'}{v.tage ? ` · ${v.tage} Tage` : ''}</div>
+          ))}
+        </div>
+      )}
+
+      <div>
+        <p style={subLabel}>Für die Gehaltsabrechnung</p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 24px' }}>
+          <DetailRow label="Bisherige WAZ / Gehalt" value={`${s.wazBisher || '–'} Std. / ${s.gehaltBisher || '–'} €`} />
+        </div>
+        {s.anmerkung && <div style={{ marginTop: 6 }}><span style={{ color: T.faint }}>Anmerkung: </span>{s.anmerkung}</div>}
+      </div>
+
+      <div>
+        <span style={{ color: T.faint }}>Erklärung bestätigt: </span>
+        {s.erklaerungBestaetigt ? <span style={{ color: T.greenSoft }}>✓ ja{s.erklaerungDatum ? ` (${s.erklaerungDatum})` : ''}</span> : <span style={{ color: T.mauve }}>noch nicht</span>}
+      </div>
+    </div>
+  );
+};
+
 const AdminStammdaten = ({ employees, stammdaten }) => {
   const [openId, setOpenId] = useState(null);
   const byId = id => stammdaten.find(s => s.id === id) || null;
@@ -1687,31 +2016,7 @@ const AdminStammdaten = ({ employees, stammdaten }) => {
           {openId === emp.id && (
             <div style={{ padding: '12px 0 18px', borderBottom: '1px solid ' + T.lineSoft }}>
               {!s && <Empty text="Noch keine Stammdaten eingetragen." />}
-              {s && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 24px', fontSize: 13 }}>
-                  <div><span style={{ color: T.faint }}>Adresse: </span>{s.strasse || '–'}, {s.plz || ''} {s.ort || ''}</div>
-                  <div><span style={{ color: T.faint }}>Geburtsdatum: </span>{s.geburtsdatum || '–'}</div>
-                  <div><span style={{ color: T.faint }}>Steuer-ID / Klasse: </span>{s.steuerId || '–'} / {s.steuerklasse || '–'}</div>
-                  <div><span style={{ color: T.faint }}>Familienstand: </span>{s.familienstand || '–'} · Kinderfreibeträge: {s.kinderfreibetraege || '–'}</div>
-                  <div><span style={{ color: T.faint }}>Sozialversicherungsnr.: </span>{s.sozialversicherungsnummer || '–'}</div>
-                  <div><span style={{ color: T.faint }}>Krankenkasse: </span>{s.krankenkasse || '–'}</div>
-                  <div><span style={{ color: T.faint }}>IBAN: </span>{s.iban || '–'}</div>
-                  <div><span style={{ color: T.faint }}>Kontoinhaber: </span>{s.kontoinhaber || '–'}</div>
-                  <div><span style={{ color: T.faint }}>Schwerbehinderung: </span>{s.schwerbehinderung || 'keine Angabe'}</div>
-                  <div><span style={{ color: T.faint }}>Nebentätigkeit: </span>{s.nebentaetigkeit || '–'}</div>
-                  <div><span style={{ color: T.faint }}>Bisherige WAZ / Gehalt: </span>{s.wazBisher || '–'} Std. / {s.gehaltBisher || '–'} €</div>
-                  {s.anmerkung && <div style={{ gridColumn: '1 / -1' }}><span style={{ color: T.faint }}>Anmerkung: </span>{s.anmerkung}</div>}
-                  <div style={{ gridColumn: '1 / -1', marginTop: 8 }}>
-                    <span style={{ color: T.faint, display: 'block', marginBottom: 4 }}>Arbeitsvertrag:</span>
-                    {s.vertrag ? <FileChip name={s.vertrag.name} url={s.vertrag.url} /> : <span style={{ color: T.faint }}>fehlt</span>}
-                  </div>
-                  <div style={{ gridColumn: '1 / -1' }}>
-                    <span style={{ color: T.faint, display: 'block', margin: '8px 0 4px' }}>Qualifikationen & Urkunden ({(s.qualifikationen || []).length}):</span>
-                    {(s.qualifikationen || []).length === 0 && <span style={{ color: T.faint }}>keine</span>}
-                    {(s.qualifikationen || []).map((q, i) => <FileChip key={i} name={q.bezeichnung ? q.bezeichnung + ' — ' + q.name : q.name} url={q.url} />)}
-                  </div>
-                </div>
-              )}
+              {s && <StammdatenDetail s={s} />}
             </div>
           )}
         </div>
