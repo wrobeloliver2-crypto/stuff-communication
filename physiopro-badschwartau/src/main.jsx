@@ -38,6 +38,20 @@ const UPLOAD_URL = '/.netlify/functions/upload';
 // Verweis im Formular.
 const PROFIL_FORMULAR_URL = 'https://physiopro-fragebogen.netlify.app';
 
+// Welcher Fragebogen-„typ" verlinkt wird: das physiopro-fragebogen-Repo hat
+// den alten, generischen "profil"-Typ (nur Freitext) inzwischen durch zwei
+// überarbeitete, größtenteils klick-basierte Typen ersetzt — "therapeut" und
+// "empfang" (siehe dortige Team-Zuordnung: Rezeption/Verwaltung -> empfang,
+// alle anderen -> therapeut). "profil" existiert zwar noch, ist aber veraltet
+// und sollte nicht mehr verlinkt werden. Da die Position hier als Freitext
+// erfasst wird (Feld "position"), wählen wir den Typ per Stichwort-Erkennung;
+// ohne eindeutigen Treffer greift der Standardfall "therapeut".
+const fragebogenTyp = (position) => {
+  const p = (position || '').toLowerCase();
+  if (/rezeption|empfang|verwaltung/.test(p)) return 'empfang';
+  return 'therapeut';
+};
+
 // Erste Namensliste (Stand 17.07.) — alle "PhysioPro Bad Schwartau". Rolle
 // und E-Mail kennt Oliver nicht, die trägt jede Person im Formular selbst
 // ein (siehe Formularfelder "position" und "email" unten).
@@ -899,7 +913,7 @@ const ProfileForm = ({ existing, onSave, readOnly = false, employeeName = '' }) 
         <div style={{ ...cardS, background: T.chip, border: 'none' }}>
           <p style={subLabel}>Dein öffentliches Profil</p>
           <p style={{ fontSize: 12, color: T.muted, margin: '0 0 10px', lineHeight: 1.6 }}>Zusätzlich kannst du dein eigenes Profil (Bio/Vorstellung) für unsere Website pflegen — das ist ein separates, kurzes Formular.</p>
-          <a href={`${PROFIL_FORMULAR_URL}?typ=profil&name=${encodeURIComponent(employeeName)}`} target="_blank" rel="noopener noreferrer" style={{ color: T.mauve, fontSize: 13, fontWeight: 500, textDecoration: 'none' }}>→ Mein Profil pflegen</a>
+          <a href={`${PROFIL_FORMULAR_URL}?typ=${fragebogenTyp(f.position)}&name=${encodeURIComponent(employeeName)}`} target="_blank" rel="noopener noreferrer" style={{ color: T.mauve, fontSize: 13, fontWeight: 500, textDecoration: 'none' }}>→ Mein Profil pflegen</a>
         </div>
       )}
     </div>
