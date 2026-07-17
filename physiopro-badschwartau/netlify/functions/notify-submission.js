@@ -4,7 +4,9 @@
 // Verschickt eine Zusammenfassungs-Mail an Hanna & Oliver über Microsoft
 // Graph (dieselbe App-Registrierung/Umgebungsvariablen-Namen wie im
 // physiopro-fragebogen-Projekt: AZURE_CLIENT_ID/SECRET/TENANT_ID,
-// MAIL_SENDER, MAIL_RECIPIENT, MAIL_CC).
+// MAIL_SENDER, MAIL_RECIPIENT, MAIL_CC). AZURE_CLIENT_SECRET ist ein eigenes,
+// zweites Secret derselben Azure-App (17.07. von Oliver angelegt) — beeinflusst
+// physiopro-fragebogen nicht.
 const HEADERS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type', 'Content-Type': 'application/json' };
 
 const LABELS = {
