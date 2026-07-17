@@ -10,12 +10,12 @@ const T = {
   green: '#4a5d3a', greenSoft: '#6e8159', mauve: '#b07882', mauveSoft: '#c08a93', chip: '#f4f2eb',
 };
 
-const ADMIN_CREDENTIALS = [
-  { email: 'oliver.wrobel@pilatescompany.de', password: 'admin123', name: 'Oliver Wrobel' },
-  { email: 'hanna.wrobel@pilatescompany.de', password: 'admin123', name: 'Hanna Wrobel' },
-];
+// Verwaltung-Login läuft seit der §613a-Übernahme (Gehaltsdaten im System)
+// server-seitig über /.netlify/functions/auth — siehe dortiger Kommentar.
+// Hier bewusst KEINE Passwörter mehr im Client-Code.
+const AUTH_URL = '/.netlify/functions/auth';
 const CATEGORIES = ['Ankündigungen', 'Events', 'Info'];
-const GROUPS = ['PhysioPro Staff', 'Pilates Trainer', 'Verwaltung'];
+const GROUPS = ['PhysioPro Staff', 'Pilates Trainer', 'PhysioPlus Bad Schwartau', 'Verwaltung'];
 
 const FIRMS = {
   beide:   { label: 'Beide', short: 'PHYSIOPRO & PILATES', dot: 'split' },
@@ -215,6 +215,11 @@ const App = () => {
   const [tools, setTools] = useState(DEFAULT_TOOLS);
   const [messages, setMessages] = useState([]);
   const [audit, setAudit] = useState([]);
+  // Stammdaten der §613a-Übernahme (Bad Schwartau) und perspektivisch aller
+  // Mitarbeitenden: ein Datensatz pro Person, id = Mitarbeiter-id (siehe
+  // saveStammdaten unten — Upsert statt Append, damit erneutes Speichern
+  // denselben Datensatz aktualisiert statt Duplikate anzulegen).
+  const [stammdaten, setStammdaten] = useState([]);
   // Wird true, sobald die Daten mindestens einmal erfolgreich von den Sheets
   // geladen wurden. Vorher darf NICHTS ins Sheet geschrieben werden, sonst
   // könnte ein leerer Anfangszustand echte Daten überschreiben.
@@ -240,7 +245,7 @@ const App = () => {
   // geleerte Collections im Sheet. Dieses Ref wird bei jedem Laden und jedem
   // Schreiben synchron mitgeführt — commit() liest NUR noch hieraus, nie
   // mehr aus einem Updater-Nebeneffekt.
-  const dataRef = useRef({ news: [], tools: DEFAULT_TOOLS, messages: [], employees: EMPLOYEES, audit: [] });
+  const dataRef = useRef({ news: [], tools: DEFAULT_TOOLS, messages: [], employees: EMPLOYEES, audit: [], stammdaten: [] });
   // Verhindert, dass der Versuch, eine gespeicherte Mitarbeiter-Session
   // wiederherzustellen, bei JEDEM periodischen 20-Sekunden-Reload erneut
   // läuft (der useEffect unten hat ein leeres Dependency-Array, "user" wäre
@@ -278,7 +283,7 @@ const backfillMissingIds = (items) => {
       if (isWriteInProgressOrRecent()) return;
       try {
         const { items, versions } = await apiGetAll();
-        const { news: n, tools: t, messages: m, employees: e, audit: a } = items;
+        const { news: n, tools: t, messages: m, employees: e, audit: a, stammdaten: sd } = items;
         // Versionsstände und dataLoaded MÜSSEN vor den backfillMissingIds-
         // Aufrufen unten gesetzt werden: commit() (aufgerufen für die
         // Backfill-Korrektur) prüft dataLoaded.current als allererstes und
@@ -308,6 +313,7 @@ const backfillMissingIds = (items) => {
         if (m.length) { dataRef.current.messages = m; setMessages(m); }
         if (e.length) { dataRef.current.employees = e; setEmployees(e); } else { dataRef.current.employees = EMPLOYEES; setEmployees(EMPLOYEES); }
         if (a.length) { dataRef.current.audit = a; setAudit(a); }
+        if (sd && sd.length) { dataRef.current.stammdaten = sd; setStammdaten(sd); }
 
         // Gespeicherte Mitarbeiter-Session wiederherstellen — nur beim
         // allerersten Laden, per ref abgesichert (siehe Kommentar oben bei
@@ -373,12 +379,25 @@ const backfillMissingIds = (items) => {
   };
 
   const adminLogin = async (email, pw) => {
-    const a = ADMIN_CREDENTIALS.find(x => x.email === email && x.password === pw);
-    if (a) {
-      setUser({ ...a, isAdmin: true });
-      setPage('admin');
-      await logA('Login', a.name, 'Admin');
-    } else alert('E-Mail oder Passwort falsch');
+    try {
+      const res = await fetch(AUTH_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password: pw }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setUser({ name: data.name, email: data.email, isAdmin: true });
+        setPage('admin');
+        await logA('Login', data.name, 'Admin');
+      } else if (data.error === 'server_misconfigured') {
+        alert('Verwaltung-Login ist aktuell nicht konfiguriert (fehlendes Server-Passwort). Bitte Oliver informieren.');
+      } else {
+        alert('E-Mail oder Passwort falsch');
+      }
+    } catch (err) {
+      alert('Login gerade nicht erreichbar: ' + err.message);
+    }
   };
 
   const logout = () => { setUser(null); setPage('login'); clearEmpSession(); };
@@ -625,6 +644,20 @@ const backfillMissingIds = (items) => {
     await logA('Mitarbeiter gelöscht', user.name, (emp?.name || id));
   };
 
+  // Upsert statt Append: die id des Stammdaten-Datensatzes IST die
+  // Mitarbeiter-id (ein Mitarbeiter = ein Datensatz). Erneutes Speichern
+  // (z. B. nach einer Korrektur) aktualisiert den bestehenden Eintrag, statt
+  // einen zweiten anzulegen.
+  const saveStammdaten = async (employeeId, fields) => {
+    const employeeName = employees.find(e => e.id === employeeId)?.name || employeeId;
+    await commit(setStammdaten, 'stammdaten', prev => {
+      const entry = { id: employeeId, ...fields, updated: new Date().toLocaleString('de-DE') };
+      const exists = prev.some(s => s.id === employeeId);
+      return exists ? prev.map(s => s.id === employeeId ? entry : s) : [...prev, entry];
+    });
+    await logA('Stammdaten gespeichert', employeeName, employeeId === user?.id ? 'durch Mitarbeiter/in selbst' : 'durch Verwaltung');
+  };
+
   if (loading) return (
     <div style={{ minHeight: '100vh', background: '#faf8f4', display: 'flex', flexDirection: 'column', fontFamily: 'system-ui,-apple-system,sans-serif' }}>
       <BrandHeader right={<span style={{ fontSize: 11, color: '#a39e92', letterSpacing: '0.14em' }}>INTRANET</span>} />
@@ -637,8 +670,8 @@ const backfillMissingIds = (items) => {
   );
 
   if (page === 'login') return <Login employees={employees} onPinSetup={pinSetup} onEmployeeLogin={employeeLogin} onAdminLogin={adminLogin} />;
-  if (page === 'employee' && user) return <Employee user={user} news={news} tools={tools} messages={messages.filter(m => forMe(m, user))} onMarkRead={markRead} onReply={addReply} onToggleLike={toggleLike} onComment={addComment} onToggleConfirm={toggleConfirm} onLogout={logout} />;
-  if (page === 'admin' && user?.isAdmin) return <Admin user={user} news={news} tools={tools} messages={messages} employees={employees} audit={audit} onAddNews={addNews} onUpdateNews={updateNews} onDelNews={delNews} onMoveNews={moveNews} onAddTool={addTool} onUpdateTool={updateTool} onDelTool={delTool} onSend={sendMessage} onReply={addReply} onCloseDialog={closeDialog} onReopenDialog={reopenDialog} onResetPin={resetPin} onAddEmployee={addEmployee} onDelEmployee={delEmployee} onLogout={logout} />;
+  if (page === 'employee' && user) return <Employee user={user} news={news} tools={tools} messages={messages.filter(m => forMe(m, user))} stammdaten={stammdaten.find(s => s.id === user.id) || null} onSaveStammdaten={fields => saveStammdaten(user.id, fields)} onMarkRead={markRead} onReply={addReply} onToggleLike={toggleLike} onComment={addComment} onToggleConfirm={toggleConfirm} onLogout={logout} />;
+  if (page === 'admin' && user?.isAdmin) return <Admin user={user} news={news} tools={tools} messages={messages} employees={employees} audit={audit} stammdaten={stammdaten} onAddNews={addNews} onUpdateNews={updateNews} onDelNews={delNews} onMoveNews={moveNews} onAddTool={addTool} onUpdateTool={updateTool} onDelTool={delTool} onSend={sendMessage} onReply={addReply} onCloseDialog={closeDialog} onReopenDialog={reopenDialog} onResetPin={resetPin} onAddEmployee={addEmployee} onDelEmployee={delEmployee} onLogout={logout} />;
   return null;
 };
 
@@ -768,7 +801,6 @@ const Login = ({ employees, onPinSetup, onEmployeeLogin, onAdminLogin }) => {
               <input type="email" placeholder="E-Mail" value={email} onChange={e => setEmail(e.target.value)} style={inp} />
               <input type="password" placeholder="Passwort" value={pw} onChange={e => setPw(e.target.value)} style={inp} />
               <button style={btn(T.mauve)} onClick={() => onAdminLogin(email, pw)}>Anmelden</button>
-              <p style={{ fontSize: 11, color: T.faint, textAlign: 'center', marginTop: 14 }}>Demo: oliver.wrobel@pilatescompany.de / admin123</p>
             </div>
           )}
         </div>
@@ -777,10 +809,11 @@ const Login = ({ employees, onPinSetup, onEmployeeLogin, onAdminLogin }) => {
   );
 };
 
-const Employee = ({ user, news, tools, messages, onMarkRead, onReply, onToggleLike, onComment, onToggleConfirm, onLogout }) => {
+const Employee = ({ user, news, tools, messages, stammdaten, onSaveStammdaten, onMarkRead, onReply, onToggleLike, onComment, onToggleConfirm, onLogout }) => {
   const [tab, setTab] = useState('news');
   const initials = user.name.split(' ').map(w => w[0]).join('').slice(0, 2);
   const unread = messages.filter(m => !m.readBy.some(r => r.id === user.id)).length;
+  const stammdatenComplete = isStammdatenComplete(stammdaten);
   return (
     <div style={{ minHeight: '100vh', background: T.bg, fontFamily: 'system-ui,-apple-system,sans-serif', display: 'flex', flexDirection: 'column' }}>
       <BrandHeader right={
@@ -795,14 +828,15 @@ const Employee = ({ user, news, tools, messages, onMarkRead, onReply, onToggleLi
       } />
       <div style={{ background: T.surface, borderBottom: '1px solid ' + T.lineSoft }}>
         <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 1.5rem', display: 'flex', gap: 28 }}>
-          {[['news', 'News'], ['tools', 'Tools & Links'], ['postfach', 'Mein Bereich' + (unread ? ' · ' + unread : '')]].map(([k, l]) => (
-            <button key={k} onClick={() => setTab(k)} style={{ background: 'none', border: 'none', padding: '14px 0', fontSize: 12, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: 'pointer', color: tab === k ? T.ink : T.faint, borderBottom: tab === k ? '2px solid ' + (k === 'postfach' ? T.mauve : T.green) : '2px solid transparent', marginBottom: -1 }}>{l}</button>
+          {[['news', 'News'], ['tools', 'Tools & Links'], ['stammdaten', 'Meine Stammdaten' + (stammdatenComplete ? '' : ' ●')], ['postfach', 'Mein Bereich' + (unread ? ' · ' + unread : '')]].map(([k, l]) => (
+            <button key={k} onClick={() => setTab(k)} style={{ background: 'none', border: 'none', padding: '14px 0', fontSize: 12, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: 'pointer', color: tab === k ? T.ink : (k === 'stammdaten' && !stammdatenComplete ? T.mauve : T.faint), borderBottom: tab === k ? '2px solid ' + (k === 'postfach' ? T.mauve : T.green) : '2px solid transparent', marginBottom: -1 }}>{l}</button>
           ))}
         </div>
       </div>
       <div style={{ flex: 1, maxWidth: 1100, margin: '0 auto', width: '100%', padding: '1.75rem 1.5rem', boxSizing: 'border-box' }}>
         {tab === 'news' && <NewsFeed news={news} />}
         {tab === 'tools' && <ToolsList tools={tools} />}
+        {tab === 'stammdaten' && <StammdatenForm existing={stammdaten} onSave={onSaveStammdaten} />}
         {tab === 'postfach' && <Postfach user={user} messages={messages} onMarkRead={onMarkRead} onReply={onReply} onToggleLike={onToggleLike} onComment={onComment} onToggleConfirm={onToggleConfirm} />}
       </div>
     </div>
@@ -894,6 +928,143 @@ const ToolsList = ({ tools }) => (
     </div>
   </div>
 );
+
+// Pflichtfelder für den Status "vollständig" (Ampel für die Verwaltung vor
+// den Mitarbeitergesprächen). Bewusst NICHT "Schwerbehinderung" oder
+// "Nebentätigkeit" — das sind freiwillige bzw. situationsabhängige Angaben,
+// deren Fehlen nicht "unvollständig" bedeuten soll.
+const STAMMDATEN_REQUIRED_FIELDS = ['strasse', 'plz', 'ort', 'geburtsdatum', 'steuerId', 'steuerklasse', 'sozialversicherungsnummer', 'krankenkasse', 'iban', 'kontoinhaber'];
+const isStammdatenComplete = s => !!s && STAMMDATEN_REQUIRED_FIELDS.every(f => (s[f] || '').toString().trim().length > 0) && !!s.vertrag;
+
+const StammdatenForm = ({ existing, onSave }) => {
+  const blank = {
+    strasse: '', plz: '', ort: '', geburtsdatum: '',
+    steuerId: '', steuerklasse: '', familienstand: '', kinderfreibetraege: '',
+    sozialversicherungsnummer: '', krankenkasse: '',
+    iban: '', kontoinhaber: '',
+    schwerbehinderung: '', nebentaetigkeit: '',
+    wazBisher: '', gehaltBisher: '', anmerkung: '',
+    vertrag: null, qualifikationen: [],
+  };
+  const [f, setF] = useState({ ...blank, ...(existing || {}) });
+  const [qLabel, setQLabel] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState(null);
+  const set = (k, v) => setF(prev => ({ ...prev, [k]: v }));
+
+  const submit = async () => {
+    setSaving(true);
+    try {
+      await onSave(f);
+      setSavedAt(new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const complete = isStammdatenComplete(f);
+
+  return (
+    <div>
+      <Label>Meine Stammdaten</Label>
+      <p style={{ fontSize: 12, color: T.muted, margin: '-0.4rem 0 1.2rem', lineHeight: 1.6 }}>
+        Grundlage für dein Mitarbeitergespräch und die künftige Lohn-/Gehaltsabrechnung. Bitte vollständig ausfüllen — du kannst jederzeit zurückkommen und ergänzen, nichts geht verloren.
+      </p>
+      {!complete && (
+        <div style={{ background: '#fdf3ea', border: '1px solid ' + T.mauveSoft, borderRadius: 10, padding: '10px 14px', fontSize: 12, color: T.muted, marginBottom: 16 }}>
+          Noch nicht vollständig — Pflichtfelder unten sowie der Arbeitsvertrag-Upload fehlen noch teilweise.
+        </div>
+      )}
+
+      <div style={cardS}>
+        <p style={subLabel}>Persönliche Daten</p>
+        <div style={{ display: 'flex', gap: 12 }}>
+          <input value={f.strasse} onChange={e => set('strasse', e.target.value)} placeholder="Straße & Hausnummer" style={{ ...fieldS, flex: 2 }} />
+          <input value={f.plz} onChange={e => set('plz', e.target.value)} placeholder="PLZ" style={{ ...fieldS, flex: 1 }} />
+          <input value={f.ort} onChange={e => set('ort', e.target.value)} placeholder="Ort" style={{ ...fieldS, flex: 1.5 }} />
+        </div>
+        <input type="date" value={f.geburtsdatum} onChange={e => set('geburtsdatum', e.target.value)} style={fieldS} />
+        <div style={{ display: 'flex', gap: 12 }}>
+          <input value={f.steuerId} onChange={e => set('steuerId', e.target.value)} placeholder="Steuer-ID" style={{ ...fieldS, flex: 1 }} />
+          <select value={f.steuerklasse} onChange={e => set('steuerklasse', e.target.value)} style={{ ...fieldS, flex: 1 }}>
+            <option value="">Steuerklasse …</option>
+            {['I', 'II', 'III', 'IV', 'V', 'VI'].map(k => <option key={k} value={k}>{k}</option>)}
+          </select>
+        </div>
+        <div style={{ display: 'flex', gap: 12 }}>
+          <select value={f.familienstand} onChange={e => set('familienstand', e.target.value)} style={{ ...fieldS, flex: 1 }}>
+            <option value="">Familienstand …</option>
+            {['ledig', 'verheiratet', 'geschieden', 'verwitwet'].map(k => <option key={k} value={k}>{k}</option>)}
+          </select>
+          <input value={f.kinderfreibetraege} onChange={e => set('kinderfreibetraege', e.target.value)} placeholder="Kinderfreibeträge (Anzahl)" style={{ ...fieldS, flex: 1 }} />
+        </div>
+        <div style={{ display: 'flex', gap: 12 }}>
+          <input value={f.sozialversicherungsnummer} onChange={e => set('sozialversicherungsnummer', e.target.value)} placeholder="Sozialversicherungsnummer" style={{ ...fieldS, flex: 1 }} />
+          <input value={f.krankenkasse} onChange={e => set('krankenkasse', e.target.value)} placeholder="Krankenkasse" style={{ ...fieldS, flex: 1 }} />
+        </div>
+        <div style={{ display: 'flex', gap: 12 }}>
+          <input value={f.iban} onChange={e => set('iban', e.target.value)} placeholder="IBAN" style={{ ...fieldS, flex: 1.3 }} />
+          <input value={f.kontoinhaber} onChange={e => set('kontoinhaber', e.target.value)} placeholder="Kontoinhaber (falls abweichend)" style={{ ...fieldS, flex: 1 }} />
+        </div>
+        <select value={f.schwerbehinderung} onChange={e => set('schwerbehinderung', e.target.value)} style={fieldS}>
+          <option value="">Schwerbehinderung — freiwillige Angabe</option>
+          <option value="ja">Ja</option>
+          <option value="nein">Nein</option>
+        </select>
+      </div>
+
+      <div style={cardS}>
+        <p style={subLabel}>Arbeitsvertrag</p>
+        <p style={{ fontSize: 12, color: T.muted, margin: '0 0 10px', lineHeight: 1.6 }}>Bitte deinen bisherigen Arbeitsvertrag bei der PHYSIO PLUS GmbH hochladen (PDF oder Scan/Foto).</p>
+        {f.vertrag
+          ? <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <FileChip name={f.vertrag.name} url={f.vertrag.url} />
+              <button onClick={() => set('vertrag', null)} style={{ background: 'none', border: 'none', color: T.faint, fontSize: 12, cursor: 'pointer' }}>entfernen</button>
+            </div>
+          : <UploadButton folder="stammdaten-vertraege" accept="image/*,.pdf,.docx,.doc" label="+ Arbeitsvertrag hochladen" onUploaded={file => set('vertrag', { url: file.url, name: file.name, path: file.path })} />}
+      </div>
+
+      <div style={cardS}>
+        <p style={subLabel}>Qualifikationen & Urkunden</p>
+        <p style={{ fontSize: 12, color: T.muted, margin: '0 0 10px', lineHeight: 1.6 }}>Ausbildungsabschluss, Fortbildungsnachweise, Berufserlaubnis/Approbation, ggf. Führungszeugnis — beliebig viele Dateien.</p>
+        {f.qualifikationen.length > 0 && (
+          <div style={{ marginBottom: 10 }}>
+            {f.qualifikationen.map((q, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                <FileChip name={q.bezeichnung ? q.bezeichnung + ' — ' + q.name : q.name} url={q.url} />
+                <button onClick={() => set('qualifikationen', f.qualifikationen.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: T.faint, fontSize: 12, cursor: 'pointer' }}>entfernen</button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <input value={qLabel} onChange={e => setQLabel(e.target.value)} placeholder="Bezeichnung (z. B. „Physiotherapie-Examen“)" style={{ ...fieldS, marginBottom: 0, flex: 1, minWidth: 220 }} />
+          <UploadButton folder="stammdaten-qualifikationen" accept="image/*,.pdf,.docx,.doc" label="+ Datei hochladen" onUploaded={file => { set('qualifikationen', [...f.qualifikationen, { url: file.url, name: file.name, path: file.path, bezeichnung: qLabel }]); setQLabel(''); }} />
+        </div>
+      </div>
+
+      <div style={cardS}>
+        <p style={subLabel}>Für die Gehaltsabrechnung</p>
+        <select value={f.nebentaetigkeit} onChange={e => set('nebentaetigkeit', e.target.value)} style={fieldS}>
+          <option value="">Nebentätigkeit?</option>
+          <option value="ja">Ja</option>
+          <option value="nein">Nein</option>
+        </select>
+        <div style={{ display: 'flex', gap: 12 }}>
+          <input value={f.wazBisher} onChange={e => set('wazBisher', e.target.value)} placeholder="Bisherige Wochenarbeitszeit (Std.)" style={{ ...fieldS, flex: 1 }} />
+          <input value={f.gehaltBisher} onChange={e => set('gehaltBisher', e.target.value)} placeholder="Bisheriges Gehalt (€, brutto)" style={{ ...fieldS, flex: 1 }} />
+        </div>
+        <p style={{ fontSize: 11, color: T.faint, margin: '-6px 0 12px' }}>Bitte laut deinem bisherigen Arbeitsvertrag angeben — wird im Gespräch abgeglichen.</p>
+        <textarea value={f.anmerkung} onChange={e => set('anmerkung', e.target.value)} placeholder="Anmerkungen (optional)" rows={3} style={{ ...fieldS, fontFamily: 'inherit', resize: 'vertical' }} />
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+        <button onClick={submit} disabled={saving} style={{ ...primaryBtn, background: T.green, opacity: saving ? 0.6 : 1, cursor: saving ? 'default' : 'pointer' }}>{saving ? 'Wird gespeichert …' : 'Speichern'}</button>
+        {savedAt && <span style={{ fontSize: 12, color: T.greenSoft }}>Gespeichert um {savedAt}</span>}
+      </div>
+    </div>
+  );
+};
 
 const Postfach = ({ user, messages, onMarkRead, onReply, onToggleLike, onComment, onToggleConfirm }) => (
   <div>
@@ -997,7 +1168,7 @@ const MessageThread = ({ m, user, unread, onOpen, onReply, onToggleLike, onComme
   );
 };
 
-const Admin = ({ user, news, tools, messages, employees, audit, onAddNews, onUpdateNews, onDelNews, onMoveNews, onAddTool, onUpdateTool, onDelTool, onSend, onReply, onCloseDialog, onReopenDialog, onResetPin, onAddEmployee, onDelEmployee, onLogout }) => {
+const Admin = ({ user, news, tools, messages, employees, audit, stammdaten, onAddNews, onUpdateNews, onDelNews, onMoveNews, onAddTool, onUpdateTool, onDelTool, onSend, onReply, onCloseDialog, onReopenDialog, onResetPin, onAddEmployee, onDelEmployee, onLogout }) => {
   const [tab, setTab] = useState('news');
   return (
     <div style={{ minHeight: '100vh', background: T.bg, fontFamily: 'system-ui,-apple-system,sans-serif', display: 'flex', flexDirection: 'column' }}>
@@ -1010,7 +1181,7 @@ const Admin = ({ user, news, tools, messages, employees, audit, onAddNews, onUpd
       } />
       <div style={{ background: T.surface, borderBottom: '1px solid ' + T.lineSoft }}>
         <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 1.5rem', display: 'flex', gap: 28 }}>
-          {[['news', 'News'], ['tools', 'Tools & Links'], ['post', 'Persönl. Bereich'], ['team', 'Mitarbeiter'], ['audit', 'Protokoll']].map(([k, l]) => (
+          {[['news', 'News'], ['tools', 'Tools & Links'], ['post', 'Persönl. Bereich'], ['stammdaten', 'Stammdaten (§613a)'], ['team', 'Mitarbeiter'], ['audit', 'Protokoll']].map(([k, l]) => (
             <button key={k} onClick={() => setTab(k)} style={{ background: 'none', border: 'none', padding: '14px 0', fontSize: 12, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: 'pointer', color: tab === k ? T.ink : T.faint, borderBottom: tab === k ? '2px solid ' + T.mauve : '2px solid transparent', marginBottom: -1 }}>{l}</button>
           ))}
         </div>
@@ -1019,6 +1190,7 @@ const Admin = ({ user, news, tools, messages, employees, audit, onAddNews, onUpd
         {tab === 'news' && <AdminNews news={news} onAdd={onAddNews} onUpdate={onUpdateNews} onDel={onDelNews} onMove={onMoveNews} />}
         {tab === 'tools' && <AdminTools tools={tools} onAdd={onAddTool} onUpdate={onUpdateTool} onDel={onDelTool} />}
         {tab === 'post' && <AdminPost employees={employees} messages={messages} onSend={onSend} onReply={onReply} onCloseDialog={onCloseDialog} onReopenDialog={onReopenDialog} />}
+        {tab === 'stammdaten' && <AdminStammdaten employees={employees} stammdaten={stammdaten} />}
         {tab === 'team' && <AdminTeam employees={employees} onResetPin={onResetPin} onAddEmployee={onAddEmployee} onDelEmployee={onDelEmployee} />}
         {tab === 'audit' && <AdminAudit audit={audit} />}
       </div>
@@ -1437,7 +1609,7 @@ const AdminMessageThread = ({ m, employees, onReply, onCloseDialog, onReopenDial
   );
 };
 
-const COMPANIES = ['PhysioPro', 'Pilates', 'Beide'];
+const COMPANIES = ['PhysioPro', 'Pilates', 'Bad Schwartau', 'Beide'];
 
 const AdminTeamAdd = ({ onAdd }) => {
   const [open, setOpen] = useState(false);
@@ -1480,6 +1652,67 @@ const AdminTeamAdd = ({ onAdd }) => {
         <button onClick={submit} disabled={saving || !name.trim()} style={{ ...primaryBtn, opacity: saving || !name.trim() ? 0.6 : 1, cursor: saving || !name.trim() ? 'default' : 'pointer' }}>{saving ? 'Wird gespeichert …' : 'Hinzufügen'}</button>
         <button onClick={() => { reset(); setOpen(false); }} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 8, padding: '10px 16px', fontSize: 13, color: T.muted, cursor: 'pointer' }}>Abbrechen</button>
       </div>
+    </div>
+  );
+};
+
+// Übersicht für die Verwaltung: wer hat seine Stammdaten (Adresse, Steuer-ID,
+// IBAN, Arbeitsvertrag …) schon eingegeben — direkte Vorbereitung für die
+// strukturierten Mitarbeitergespräche im Zuge der §613a-Übernahme.
+const AdminStammdaten = ({ employees, stammdaten }) => {
+  const [openId, setOpenId] = useState(null);
+  const byId = id => stammdaten.find(s => s.id === id) || null;
+  const rows = employees.map(e => ({ emp: e, s: byId(e.id), complete: isStammdatenComplete(byId(e.id)) }));
+  const doneCount = rows.filter(r => r.complete).length;
+  return (
+    <div style={cardS}>
+      <Label>Stammdaten-Status ({doneCount}/{employees.length} vollständig)</Label>
+      <p style={{ fontSize: 12, color: T.muted, margin: '-0.4rem 0 1.2rem', lineHeight: 1.6 }}>
+        Jede Person trägt ihre eigenen Daten im Bereich „Meine Stammdaten" ein. Hier siehst du den Stand vor den Mitarbeitergesprächen — zum Aufklappen auf eine Zeile klicken.
+      </p>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,1.5fr) minmax(0,1fr) minmax(0,1fr)', fontSize: 11, color: T.faint, letterSpacing: '0.08em', textTransform: 'uppercase', padding: '0 0 8px', borderBottom: '1px solid ' + T.lineSoft }}>
+        <span>Name</span><span>Rolle / Firma</span><span>Status</span><span>Zuletzt aktualisiert</span>
+      </div>
+      {rows.map(({ emp, s, complete }) => (
+        <div key={emp.id}>
+          <div onClick={() => setOpenId(openId === emp.id ? null : emp.id)} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,1.5fr) minmax(0,1fr) minmax(0,1fr)', alignItems: 'center', padding: '11px 0', borderBottom: '1px solid ' + T.lineSoft, fontSize: 13, color: T.ink, cursor: 'pointer' }}>
+            <span>{emp.name}</span>
+            <span style={{ color: T.muted }}>{emp.role} · {emp.company}</span>
+            <span style={{ color: complete ? T.greenSoft : (s ? T.mauve : T.faint), fontWeight: 500 }}>{complete ? '✓ vollständig' : s ? 'teilweise' : 'ausstehend'}</span>
+            <span style={{ color: T.faint, fontSize: 12 }}>{s?.updated || '–'}</span>
+          </div>
+          {openId === emp.id && (
+            <div style={{ padding: '12px 0 18px', borderBottom: '1px solid ' + T.lineSoft }}>
+              {!s && <Empty text="Noch keine Stammdaten eingetragen." />}
+              {s && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 24px', fontSize: 13 }}>
+                  <div><span style={{ color: T.faint }}>Adresse: </span>{s.strasse || '–'}, {s.plz || ''} {s.ort || ''}</div>
+                  <div><span style={{ color: T.faint }}>Geburtsdatum: </span>{s.geburtsdatum || '–'}</div>
+                  <div><span style={{ color: T.faint }}>Steuer-ID / Klasse: </span>{s.steuerId || '–'} / {s.steuerklasse || '–'}</div>
+                  <div><span style={{ color: T.faint }}>Familienstand: </span>{s.familienstand || '–'} · Kinderfreibeträge: {s.kinderfreibetraege || '–'}</div>
+                  <div><span style={{ color: T.faint }}>Sozialversicherungsnr.: </span>{s.sozialversicherungsnummer || '–'}</div>
+                  <div><span style={{ color: T.faint }}>Krankenkasse: </span>{s.krankenkasse || '–'}</div>
+                  <div><span style={{ color: T.faint }}>IBAN: </span>{s.iban || '–'}</div>
+                  <div><span style={{ color: T.faint }}>Kontoinhaber: </span>{s.kontoinhaber || '–'}</div>
+                  <div><span style={{ color: T.faint }}>Schwerbehinderung: </span>{s.schwerbehinderung || 'keine Angabe'}</div>
+                  <div><span style={{ color: T.faint }}>Nebentätigkeit: </span>{s.nebentaetigkeit || '–'}</div>
+                  <div><span style={{ color: T.faint }}>Bisherige WAZ / Gehalt: </span>{s.wazBisher || '–'} Std. / {s.gehaltBisher || '–'} €</div>
+                  {s.anmerkung && <div style={{ gridColumn: '1 / -1' }}><span style={{ color: T.faint }}>Anmerkung: </span>{s.anmerkung}</div>}
+                  <div style={{ gridColumn: '1 / -1', marginTop: 8 }}>
+                    <span style={{ color: T.faint, display: 'block', marginBottom: 4 }}>Arbeitsvertrag:</span>
+                    {s.vertrag ? <FileChip name={s.vertrag.name} url={s.vertrag.url} /> : <span style={{ color: T.faint }}>fehlt</span>}
+                  </div>
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <span style={{ color: T.faint, display: 'block', margin: '8px 0 4px' }}>Qualifikationen & Urkunden ({(s.qualifikationen || []).length}):</span>
+                    {(s.qualifikationen || []).length === 0 && <span style={{ color: T.faint }}>keine</span>}
+                    {(s.qualifikationen || []).map((q, i) => <FileChip key={i} name={q.bezeichnung ? q.bezeichnung + ' — ' + q.name : q.name} url={q.url} />)}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 };
