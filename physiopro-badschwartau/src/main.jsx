@@ -413,7 +413,13 @@ const App = () => {
 
   const delEmployee = async id => { await commit(setEmployees, 'employees', prev => prev.filter(e => e.id !== id)); };
 
-  if (loading) return (
+  // Mit persönlichem Einladungslink (?invite=…) NIE die Login-Seite mit der
+  // Namensliste zeigen — auch nicht kurz: solange der Link noch geprüft wird
+  // (invite === null), bleibt der Lade-Spinner stehen, danach geht es direkt
+  // zur personalisierten PIN-Seite (bzw. bei ungültigem Link zur Login-Seite
+  // mit Hinweis-Banner). Wer per Link kommt, kennt seinen Namen ja bereits.
+  const inviteParamPresent = new URLSearchParams(window.location.search).has('invite');
+  if (loading || (inviteParamPresent && invite === null)) return (
     <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', flexDirection: 'column', fontFamily: 'system-ui,-apple-system,sans-serif' }}>
       <BrandHeader />
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 16 }}>
