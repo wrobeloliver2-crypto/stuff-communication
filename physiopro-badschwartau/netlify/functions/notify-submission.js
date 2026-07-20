@@ -21,9 +21,11 @@ const LABELS = {
 const lbl = (field, v) => (v && LABELS[field] && LABELS[field][v]) || v || '–';
 const d = v => (v === undefined || v === null || v === '') ? '–' : v;
 
-const buildSummary = (name, s) => {
+const FIRMEN_LABEL = { physiopro: 'PhysioPro Bad Schwartau', pilates: 'Pilates Company' };
+
+const buildSummary = (name, s, firmaLabel) => {
   const lines = [];
-  lines.push(`Neue Übermittlung — PhysioPro Bad Schwartau Onboarding`);
+  lines.push(`Neue Übermittlung — ${firmaLabel} Onboarding`);
   lines.push(`Mitarbeiter/in: ${name}`);
   lines.push(`Übermittelt am: ${s.submittedAt || new Date().toLocaleString('de-DE')}`);
   lines.push('');
@@ -109,8 +111,9 @@ exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return { statusCode: 405, headers: HEADERS, body: JSON.stringify({ ok: false, error: 'Method not allowed' }) };
 
   try {
-    const { employeeName, profile } = JSON.parse(event.body || '{}');
+    const { employeeName, profile, firma } = JSON.parse(event.body || '{}');
     if (!employeeName || !profile) return { statusCode: 400, headers: HEADERS, body: JSON.stringify({ ok: false, error: 'employeeName/profile fehlt' }) };
+    const firmaLabel = FIRMEN_LABEL[firma] || FIRMEN_LABEL.physiopro;
 
     const { AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, AZURE_TENANT_ID, MAIL_SENDER, MAIL_RECIPIENT, MAIL_CC } = process.env;
     if (!AZURE_CLIENT_ID || !AZURE_CLIENT_SECRET || !AZURE_TENANT_ID || !MAIL_SENDER || !MAIL_RECIPIENT) {
@@ -132,7 +135,7 @@ exports.handler = async (event) => {
       return { statusCode: 500, headers: HEADERS, body: JSON.stringify({ ok: false, error: 'Azure-Token fehlgeschlagen: ' + (tokenData.error_description || tokenData.error || 'unbekannt') }) };
     }
 
-    const content = buildSummary(employeeName, profile);
+    const content = buildSummary(employeeName, profile, firmaLabel);
     const toRecipients = [{ emailAddress: { address: MAIL_RECIPIENT } }];
     const ccRecipients = MAIL_CC ? [{ emailAddress: { address: MAIL_CC } }] : [];
 
@@ -141,7 +144,7 @@ exports.handler = async (event) => {
       headers: { Authorization: `Bearer ${tokenData.access_token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         message: {
-          subject: `PhysioPro Bad Schwartau — Onboarding übermittelt: ${employeeName}`,
+          subject: `${firmaLabel} — Onboarding übermittelt: ${employeeName}`,
           body: { contentType: 'Text', content },
           toRecipients,
           ccRecipients,

@@ -10,7 +10,7 @@
 // Oberfläche — "PhysioPlus" war der Name der übernommenen, alten Firma und
 // hat mit dieser Software nichts zu tun. Diese Site ist für "PhysioPro Bad
 // Schwartau"-Mitarbeiter.
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom/client';
 
 // Farben orientiert an physioproluebeck.de (Marken-Grün #55725e, warmes
@@ -31,6 +31,39 @@ const T = {
 const AUTH_URL = '/.netlify/functions/auth';
 const API = '/.netlify/functions/data';
 const UPLOAD_URL = '/.netlify/functions/upload';
+const EMPLOYEE_SESSION_URL = '/.netlify/functions/employee-session';
+
+// Session-Tokens (Admin + Mitarbeiter) — seit dem Sicherheits-Fix vom
+// 20.07.2026 nötig, damit /.netlify/functions/data weiß, wer fragt (siehe
+// dortiger Kommentar: vorher wurden alle Daten inkl. IBAN/Steuer-ID/PINs
+// ungeschützt an jeden Besucher ausgeliefert). Persistiert in localStorage,
+// analog zur bisherigen Mitarbeiter-Session.
+const SESSION_KEY = 'badschwartau_session_v2';
+const saveSession = (session) => { try { localStorage.setItem(SESSION_KEY, JSON.stringify(session)); } catch (e) {} };
+const clearSession = () => { try { localStorage.removeItem(SESSION_KEY); } catch (e) {} };
+const loadSession = () => { try { return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch (e) { return null; } };
+const authHeaders = (token) => (token ? { Authorization: 'Bearer ' + token } : {});
+
+// Zwei Firmen, ein Portal (Wunsch vom 20.07.2026: künftig auch für Pilates
+// Company nutzbar, nicht mehr nur PhysioPro Bad Schwartau). Verantwortliche
+// Person/Anschrift laut Oliver für beide Firmen identisch — nur der
+// Firmenname im Datenschutztext wechselt.
+const FIRMEN = {
+  physiopro: { key: 'physiopro', label: 'PhysioPro', fullLabel: 'PhysioPro Bad Schwartau', logo: '/logo.png', color: T.green },
+  pilates: { key: 'pilates', label: 'Pilates Company', fullLabel: 'Pilates Company', logo: '/logo-pilates.png', color: T.mauve },
+};
+const firmaOf = (obj) => FIRMEN[obj?.firma] || FIRMEN.physiopro;
+
+// Persönliche Ansprache je nach beim Anlegen des Einladungslinks
+// angegebenem Geschlecht — bewusst nur die Begrüßung betroffen, alle
+// übrigen Formularfelder bleiben unverändert. Bei "divers"/"unbestimmt"
+// oder fehlender Angabe (ältere Datensätze ohne dieses Feld) bleibt es bei
+// der neutralen Anrede.
+const greet = (geschlecht, vorname) => {
+  if (geschlecht === 'maennlich') return `Lieber ${vorname}`;
+  if (geschlecht === 'weiblich') return `Liebe ${vorname}`;
+  return `Hallo ${vorname}`;
+};
 
 // Link zum bestehenden, separaten Profil-System, über das Mitarbeiter ihre
 // öffentliche Bio/Rollenbeschreibung für die Website selbst pflegen können
@@ -104,29 +137,23 @@ const uploadFile = async (file, folder = 'uploads') => {
   return data;
 };
 
-// Mitarbeiter-Session (localStorage) — gleiches Muster wie im Intranet.
-const EMP_SESSION_KEY = 'badschwartau_employee_session';
-const saveEmpSession = (id, pin) => { try { localStorage.setItem(EMP_SESSION_KEY, JSON.stringify({ id, pin })); } catch (e) {} };
-const clearEmpSession = () => { try { localStorage.removeItem(EMP_SESSION_KEY); } catch (e) {} };
-const loadEmpSession = () => { try { return JSON.parse(localStorage.getItem(EMP_SESSION_KEY) || 'null'); } catch (e) { return null; } };
-
 let pendingWrites = 0;
 let writeCooldownUntil = 0;
 const isWriteInProgressOrRecent = () => pendingWrites > 0 || Date.now() < writeCooldownUntil;
 
-const apiGetAll = async () => {
-  const res = await fetch(`${API}?collection=all`);
+const apiGetAll = async (token) => {
+  const res = await fetch(`${API}?collection=all`, { headers: { ...authHeaders(token) } });
   const data = await res.json();
   if (!data.ok) throw new Error(data.error);
   return { items: data.data, versions: data.versions || {} };
 };
 
-const apiSet = async (collection, payload, expectedVersion) => {
+const apiSet = async (collection, payload, expectedVersion, token) => {
   pendingWrites++;
   try {
     const res = await fetch(API, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
       body: JSON.stringify({ collection, action: 'set', payload, expectedVersion }),
     });
     let body = null;
@@ -182,9 +209,22 @@ const TIME_OPTIONS = (() => {
 })();
 const blankArbeitszeiten = () => Object.fromEntries(WOCHENTAGE.map(([k]) => [k, { aktuellVon: '', aktuellBis: '', wunschVon: '', wunschBis: '' }]));
 
+// Base64url-JSON dekodieren (ohne Signaturprüfung — die passiert ausschließ-
+// lich serverseitig bei jedem Request). Nur genutzt, um beim Laden der Seite
+// lokal zu prüfen, ob ein gespeichertes Token grob plausibel/nicht schon
+// abgelaufen aussieht, bevor es an den Server geschickt wird.
+const decodeTokenPayload = (token) => {
+  try {
+    const body = token.slice(0, token.lastIndexOf('.'));
+    return JSON.parse(atob(body.replace(/-/g, '+').replace(/_/g, '/')));
+  } catch (e) { return null; }
+};
+
 const App = () => {
-  const [page, setPage] = useState('login');
+  const [page, setPage] = useState('login'); // 'login' | 'invite' | 'employee' | 'admin'
   const [user, setUser] = useState(null);
+  const [session, setSession] = useState(null); // {role:'admin'|'employee', token}
+  const [invite, setInvite] = useState(null); // {employeeId, vorname, firma, geschlecht, pinSet, inviteToken} | {error:true} | null
   const [loading, setLoading] = useState(true);
   const [employees, setEmployees] = useState(EMPLOYEES);
   const [profiles, setProfiles] = useState([]);
@@ -193,40 +233,87 @@ const App = () => {
   const versionsRef = useRef({});
   const dataRef = useRef({ employees: EMPLOYEES, profile: [] });
   const sessionRestoreAttempted = useRef(false);
+  const sessionTokenRef = useRef(null);
+
+  useEffect(() => { sessionTokenRef.current = session?.token || null; }, [session]);
+
+  // Als useCallback (nicht in den Effekt eingebettet), damit sowohl das
+  // Intervall/die Sichtbarkeits-Prüfung ALS AUCH jeder Login/jede
+  // Sitzungs-Wiederherstellung dieselbe Funktion sofort erneut aufrufen
+  // können — sonst würde nach einem Login bis zu 60s lang mit dem alten
+  // (fehlenden) Token weitergefragt und Admin/Mitarbeiter sähen kurzzeitig
+  // unvollständige Daten.
+  const loadAll = useCallback(async () => {
+    if (isWriteInProgressOrRecent()) return;
+    try {
+      const { items, versions } = await apiGetAll(sessionTokenRef.current);
+      const { employees: e, profile: p } = items;
+      versionsRef.current = { ...versionsRef.current, ...versions };
+      dataLoaded.current = true;
+      if (e.length) { dataRef.current.employees = e; setEmployees(e); } else { dataRef.current.employees = EMPLOYEES; setEmployees(EMPLOYEES); }
+      dataRef.current.profile = p || [];
+      setProfiles(p || []);
+    } catch (err) {
+      console.warn('Sheets nicht erreichbar:', err.message);
+    }
+  }, []);
 
   useEffect(() => {
-    const loadAll = async () => {
-      if (isWriteInProgressOrRecent()) return;
-      try {
-        const { items, versions } = await apiGetAll();
-        const { employees: e, profile: p } = items;
-        versionsRef.current = { ...versionsRef.current, ...versions };
-        dataLoaded.current = true;
-
-        if (e.length) { dataRef.current.employees = e; setEmployees(e); } else { dataRef.current.employees = EMPLOYEES; setEmployees(EMPLOYEES); }
-        if (p && p.length) { dataRef.current.profile = p; setProfiles(p); }
-
-        if (!sessionRestoreAttempted.current) {
-          sessionRestoreAttempted.current = true;
-          const saved = loadEmpSession();
-          if (saved) {
-            const empList = e.length ? e : EMPLOYEES;
-            const match = empList.find(x => x.id === saved.id && x.pinSet && x.pin === saved.pin);
-            if (match) { setUser(match); setPage('employee'); }
-            else clearEmpSession();
-          }
-        }
-      } catch (err) {
-        console.warn('Sheets nicht erreichbar:', err.message);
-      }
-    };
-
     loadAll().finally(() => setLoading(false));
     const interval = setInterval(loadAll, 60000);
     const onVisible = () => { if (document.visibilityState === 'visible') loadAll(); };
     document.addEventListener('visibilitychange', onVisible);
     return () => { clearInterval(interval); document.removeEventListener('visibilitychange', onVisible); };
-  }, []);
+  }, [loadAll]);
+
+  // Einmalig beim Start: Einladungslink (?invite=…) erkennen, sonst eine
+  // bestehende Sitzung (Admin oder Mitarbeiter) aus localStorage
+  // wiederherstellen. Ersetzt die alte, rein Client-seitige PIN-Prüfung.
+  useEffect(() => {
+    if (sessionRestoreAttempted.current) return;
+    sessionRestoreAttempted.current = true;
+
+    const run = async () => {
+      const inviteToken = new URLSearchParams(window.location.search).get('invite');
+      if (inviteToken) {
+        try {
+          const res = await fetch(EMPLOYEE_SESSION_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'resolve', inviteToken }) });
+          const data = await res.json();
+          if (data.ok) { setInvite({ ...data, inviteToken }); setPage('invite'); }
+          else setInvite({ error: true });
+        } catch (err) { setInvite({ error: true }); }
+        return;
+      }
+
+      const saved = loadSession();
+      if (!saved?.token) return;
+      const payload = decodeTokenPayload(saved.token);
+      if (!payload || Date.now() > payload.exp) { clearSession(); return; }
+
+      if (payload.role === 'admin') {
+        sessionTokenRef.current = saved.token; // sofort setzen, nicht erst über den session-Effekt (sonst Race mit loadAll)
+        setSession({ role: 'admin', token: saved.token });
+        setUser({ name: payload.name, email: payload.email, isAdmin: true });
+        setPage('admin');
+        loadAll();
+        return;
+      }
+      if (payload.role === 'employee') {
+        try {
+          const res = await fetch(EMPLOYEE_SESSION_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + saved.token }, body: JSON.stringify({ action: 'whoami' }) });
+          const data = await res.json();
+          if (data.ok) {
+            sessionTokenRef.current = saved.token;
+            setSession({ role: 'employee', token: saved.token });
+            setUser({ id: data.employeeId, name: data.name, vorname: data.vorname, firma: data.firma, geschlecht: data.geschlecht });
+            setPage('employee');
+            loadAll();
+          } else clearSession();
+        } catch (err) { /* offline — beim nächsten Laden erneut versuchen, Sitzung bleibt bestehen */ }
+      }
+    };
+    run();
+  }, [loadAll]);
 
   const commit = async (setter, collection, transform) => {
     if (!dataLoaded.current) { console.warn('Schreibvorgang blockiert: Daten noch nicht geladen (' + collection + ')'); return; }
@@ -238,7 +325,7 @@ const App = () => {
     dataRef.current[collection] = next;
     setter(next);
     const expectedVersion = versionsRef.current[collection];
-    const result = await apiSet(collection, next, expectedVersion);
+    const result = await apiSet(collection, next, expectedVersion, sessionTokenRef.current);
     if (!result.ok) {
       dataRef.current[collection] = prevSnapshot;
       setter(prevSnapshot);
@@ -252,32 +339,50 @@ const App = () => {
     return result;
   };
 
-  const pinSetup = async (id, pin) => {
-    let emp;
-    await commit(setEmployees, 'employees', prev => {
-      const next = prev.map(e => e.id === id ? { ...e, pin, pinSet: true } : e);
-      emp = next.find(e => e.id === id);
-      return next;
-    });
-    setUser(emp);
+  // PIN erstmalig festlegen bzw. anmelden — läuft jetzt serverseitig über
+  // employee-session.js (siehe dortiger Kommentar zum 20.07.2026-Fix) statt
+  // über einen Client-seitigen Array-Vergleich. Funktioniert sowohl für den
+  // neuen persönlichen Einladungslink (inviteToken) als auch für die
+  // bestehende Namens-Dropdown-Anmeldung (employeeId).
+  const applyEmployeeSession = (data) => {
+    sessionTokenRef.current = data.token;
+    setSession({ role: 'employee', token: data.token });
+    setUser({ id: data.employeeId, name: data.name, vorname: data.vorname, firma: data.firma, geschlecht: data.geschlecht });
+    saveSession({ token: data.token });
     setPage('employee');
-    saveEmpSession(emp.id, pin);
+    loadAll();
   };
 
-  const employeeLogin = (id, pin) => {
-    const emp = employees.find(e => e.id === id);
-    if (emp && emp.pinSet && emp.pin === pin) {
-      setUser(emp);
-      setPage('employee');
-      saveEmpSession(emp.id, pin);
-    } else alert('PIN falsch');
+  const claimPin = async ({ inviteToken, employeeId, pin }) => {
+    try {
+      const res = await fetch(EMPLOYEE_SESSION_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'claim', inviteToken, employeeId, pin }) });
+      const data = await res.json();
+      if (!data.ok) { alert(data.message || 'PIN konnte nicht festgelegt werden.'); return; }
+      applyEmployeeSession(data);
+    } catch (err) { alert('Gerade nicht erreichbar: ' + err.message); }
+  };
+
+  const loginPin = async ({ inviteToken, employeeId, pin }) => {
+    try {
+      const res = await fetch(EMPLOYEE_SESSION_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'login', inviteToken, employeeId, pin }) });
+      const data = await res.json();
+      if (!data.ok) { alert(data.message || 'PIN falsch.'); return; }
+      applyEmployeeSession(data);
+    } catch (err) { alert('Gerade nicht erreichbar: ' + err.message); }
   };
 
   const adminLogin = async (email, pw) => {
     try {
       const res = await fetch(AUTH_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password: pw }) });
       const data = await res.json();
-      if (data.ok) { setUser({ name: data.name, email: data.email, isAdmin: true }); setPage('admin'); }
+      if (data.ok) {
+        sessionTokenRef.current = data.token;
+        setSession({ role: 'admin', token: data.token });
+        setUser({ name: data.name, email: data.email, isAdmin: true });
+        saveSession({ token: data.token });
+        setPage('admin');
+        loadAll();
+      }
       else if (data.error === 'server_misconfigured') alert('Verwaltung-Login ist aktuell nicht konfiguriert (fehlendes Server-Passwort). Bitte Oliver informieren.');
       else alert('E-Mail oder Passwort falsch');
     } catch (err) {
@@ -285,7 +390,7 @@ const App = () => {
     }
   };
 
-  const logout = () => { setUser(null); setPage('login'); clearEmpSession(); };
+  const logout = () => { sessionTokenRef.current = null; setUser(null); setSession(null); setPage('login'); clearSession(); };
 
   const saveProfile = async (employeeId, fields) => {
     await commit(setProfiles, 'profile', prev => {
@@ -295,11 +400,15 @@ const App = () => {
     });
   };
 
-  const resetPin = async id => { await commit(setEmployees, 'employees', prev => prev.map(e => e.id === id ? { ...e, pin: null, pinSet: false } : e)); };
+  // pinVersion wird hochgezählt, damit ein bereits ausgestelltes Mitarbeiter-
+  // Token (gültig bis zu 180 Tage) sofort ungültig wird — nicht nur künftige
+  // PIN-Logins blockiert werden (siehe session_util.js/data.js resolveAuth).
+  const resetPin = async id => { await commit(setEmployees, 'employees', prev => prev.map(e => e.id === id ? { ...e, pin: undefined, pinHash: undefined, pinSet: false, pinVersion: (e.pinVersion || 0) + 1 } : e)); };
 
-  const addEmployee = async (name) => {
-    const entry = { id: 'emp' + Date.now(), name, pin: null, pinSet: false };
+  const addEmployee = async (record) => {
+    const entry = { id: 'emp' + Date.now(), pinSet: false, ...record };
     await commit(setEmployees, 'employees', prev => [...prev, entry]);
+    return entry;
   };
 
   const delEmployee = async id => { await commit(setEmployees, 'employees', prev => prev.filter(e => e.id !== id)); };
@@ -315,7 +424,8 @@ const App = () => {
     </div>
   );
 
-  if (page === 'login') return <Login employees={employees} onPinSetup={pinSetup} onEmployeeLogin={employeeLogin} onAdminLogin={adminLogin} />;
+  if (page === 'invite' && invite && !invite.error) return <InviteWelcome invite={invite} onClaim={claimPin} onLogin={loginPin} />;
+  if (page === 'login') return <Login employees={employees} inviteError={invite?.error} onPinSetup={(id, pin) => claimPin({ employeeId: id, pin })} onEmployeeLogin={(id, pin) => loginPin({ employeeId: id, pin })} onAdminLogin={adminLogin} />;
   if (page === 'employee' && user) return <Employee user={user} existing={profiles.find(s => s.id === user.id) || null} onSave={fields => saveProfile(user.id, fields)} onLogout={logout} />;
   if (page === 'admin' && user?.isAdmin && previewEmployeeId) {
     const previewUser = employees.find(e => e.id === previewEmployeeId);
@@ -325,19 +435,27 @@ const App = () => {
   return null;
 };
 
-const BrandHeader = ({ right }) => (
+// Beide Logos immer nebeneinander (Wunsch vom 20.07.2026: das Portal
+// bedient künftig beide Firmen) — firmenspezifisch wird nicht der Header,
+// sondern der jeweilige Seiteninhalt (Begrüßung, Rolle, Datenschutztext).
+// title/subtitle optional überschreibbar für Seiten mit bekanntem Kontext.
+const BrandHeader = ({ right, title, subtitle }) => (
   <div style={{ background: T.surface, borderBottom: '1px solid ' + T.lineSoft }}>
-    <div style={{ maxWidth: 1000, margin: '0 auto', padding: '1rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <img src="/logo.png" alt="PhysioPro" style={{ height: 44, width: 'auto' }} />
+    <div style={{ maxWidth: 1000, margin: '0 auto', padding: '1rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <img src="/logo.png" alt="PhysioPro" style={{ height: 38, width: 'auto' }} />
+          <span style={{ fontSize: 13, color: T.faint }}>+</span>
+          <img src="/logo-pilates.png" alt="Pilates Company" style={{ height: 38, width: 'auto' }} />
+        </div>
         <div>
-          <p style={{ margin: 0, fontSize: 18, fontWeight: 600, color: T.ink, letterSpacing: '0.02em' }}>PhysioPro <span style={{ color: T.green }}>Bad Schwartau</span></p>
-          <p style={{ margin: 0, fontSize: 11, color: T.faint, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Meine Daten</p>
+          <p style={{ margin: 0, fontSize: 17, fontWeight: 600, color: T.ink, letterSpacing: '0.02em' }}>{title || 'PhysioPro & Pilates Company'}</p>
+          <p style={{ margin: 0, fontSize: 11, color: T.faint, letterSpacing: '0.1em', textTransform: 'uppercase' }}>{subtitle || 'Mitarbeiter-Onboarding'}</p>
         </div>
       </div>
       {right}
     </div>
-    <div style={{ height: 3, background: T.green }} />
+    <div style={{ height: 3, background: 'linear-gradient(90deg, ' + T.green + ' 50%, ' + T.mauve + ' 50%)' }} />
   </div>
 );
 
@@ -371,7 +489,7 @@ const UploadButton = ({ onUploaded, folder = 'uploads', accept = 'image/*,.pdf,.
   );
 };
 
-const Login = ({ employees, onPinSetup, onEmployeeLogin, onAdminLogin }) => {
+const Login = ({ employees, inviteError, onPinSetup, onEmployeeLogin, onAdminLogin }) => {
   const [mode, setMode] = useState('employee');
   const [sel, setSel] = useState(''); const [pin, setPin] = useState('');
   const [np, setNp] = useState(''); const [cp, setCp] = useState('');
@@ -386,6 +504,11 @@ const Login = ({ employees, onPinSetup, onEmployeeLogin, onAdminLogin }) => {
         <div style={{ background: T.surface, border: '1px solid ' + T.line, borderRadius: 14, padding: '2.5rem', maxWidth: 420, width: '100%' }}>
           <h1 style={{ margin: '0 0 0.4rem', fontSize: 21, fontWeight: 500, color: T.ink }}>Willkommen</h1>
           <p style={{ margin: '0 0 1.75rem', fontSize: 13, color: T.muted }}>Bitte melde dich an, um deine Daten einzutragen.</p>
+          {inviteError && (
+            <div style={{ background: '#fdf3ea', border: '1px solid ' + T.mauveSoft, borderRadius: 10, padding: '10px 14px', fontSize: 12, color: T.muted, marginBottom: 16 }}>
+              Der Einladungslink ist ungültig oder abgelaufen. Bitte einen neuen Link bei der Verwaltung anfordern, oder unten deinen Namen aus der Liste wählen.
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 24, borderBottom: '1px solid ' + T.lineSoft, marginBottom: '1.5rem' }}>
             {[['employee', 'Mitarbeiter'], ['admin', 'Verwaltung']].map(([m, l]) => (
               <button key={m} onClick={() => setMode(m)} style={{ background: 'none', border: 'none', padding: '0 0 10px', fontSize: 12, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: 'pointer', color: mode === m ? T.ink : T.faint, borderBottom: mode === m ? '2px solid ' + (m === 'employee' ? T.green : T.mauve) : '2px solid transparent', marginBottom: -1 }}>{l}</button>
@@ -426,13 +549,67 @@ const Login = ({ employees, onPinSetup, onEmployeeLogin, onAdminLogin }) => {
   );
 };
 
+// Landing-Seite für den persönlichen Einladungslink (?invite=…) — löst die
+// öffentliche Namens-Dropdown-Auswahl für neu eingeladene Personen ab.
+// Zeigt eine personalisierte Begrüßung (Firma + Anrede je nach beim Anlegen
+// hinterlegtem Geschlecht) und direkt PIN-Festlegen bzw. -Eingabe, ohne dass
+// die Person ihren eigenen Namen aus einer öffentlichen Liste wählen muss.
+const InviteWelcome = ({ invite, onClaim, onLogin }) => {
+  const [pin, setPin] = useState('');
+  const [np, setNp] = useState(''); const [cp, setCp] = useState('');
+  const [busy, setBusy] = useState(false);
+  const firma = firmaOf(invite);
+  const inp = { width: '100%', padding: '11px 12px', marginBottom: 12, border: '1.5px solid ' + T.line, borderRadius: 8, fontSize: 14, boxSizing: 'border-box', background: T.field, color: T.ink };
+  const btn = { width: '100%', padding: 11, border: 'none', borderRadius: 8, cursor: busy ? 'default' : 'pointer', fontSize: 14, fontWeight: 500, color: '#fff', background: firma.color, letterSpacing: '0.03em', opacity: busy ? 0.7 : 1 };
+
+  const submitClaim = async () => {
+    if (np.length < 4) return alert('Mind. 4 Ziffern');
+    if (np !== cp) return alert('PINs stimmen nicht überein');
+    setBusy(true);
+    try { await onClaim({ inviteToken: invite.inviteToken, pin: np }); } finally { setBusy(false); }
+  };
+  const submitLogin = async () => {
+    setBusy(true);
+    try { await onLogin({ inviteToken: invite.inviteToken, pin }); } finally { setBusy(false); }
+  };
+
+  return (
+    <div style={{ minHeight: '100vh', background: T.bg, fontFamily: 'system-ui,-apple-system,sans-serif', display: 'flex', flexDirection: 'column' }}>
+      <BrandHeader title={firma.fullLabel} subtitle="Dein persönlicher Zugang" />
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+        <div style={{ background: T.surface, border: '1px solid ' + T.line, borderRadius: 14, padding: '2.5rem', maxWidth: 420, width: '100%' }}>
+          <h1 style={{ margin: '0 0 0.4rem', fontSize: 21, fontWeight: 500, color: T.ink }}>{greet(invite.geschlecht, invite.vorname)}!</h1>
+          <p style={{ margin: '0 0 1.75rem', fontSize: 13, color: T.muted, lineHeight: 1.6 }}>
+            Willkommen bei {firma.fullLabel}. {invite.pinSet ? 'Bitte gib deinen PIN ein, um deine Daten einzutragen.' : 'Bitte lege einmalig eine eigene PIN fest (4–6 Ziffern) — damit bist du künftig angemeldet.'}
+          </p>
+          {!invite.pinSet && (
+            <div>
+              <input type="password" inputMode="numeric" maxLength={6} placeholder="Neuer PIN" value={np} onChange={e => setNp(e.target.value)} style={inp} />
+              <input type="password" inputMode="numeric" maxLength={6} placeholder="PIN wiederholen" value={cp} onChange={e => setCp(e.target.value)} style={inp} />
+              <button style={btn} disabled={busy} onClick={submitClaim}>{busy ? 'Einen Moment …' : 'PIN festlegen & starten'}</button>
+            </div>
+          )}
+          {invite.pinSet && (
+            <div>
+              <input type="password" inputMode="numeric" maxLength={6} placeholder="Dein PIN" value={pin} onChange={e => setPin(e.target.value)} style={inp} />
+              <button style={btn} disabled={busy} onClick={submitLogin}>{busy ? 'Einen Moment …' : 'Anmelden'}</button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const cardS = { background: T.surface, border: '1px solid ' + T.lineSoft, borderRadius: 12, padding: '1.5rem', marginBottom: '1.5rem', boxShadow: '0 1px 2px rgba(44,40,37,0.04)' };
 const fieldS = { width: '100%', padding: '11px 12px', marginBottom: 12, border: '1.5px solid ' + T.line, borderRadius: 8, fontSize: 14, boxSizing: 'border-box', fontFamily: 'inherit', color: T.ink, background: T.field };
 const primaryBtn = { padding: '10px 20px', border: 'none', borderRadius: 8, background: T.mauve, color: '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer' };
 const secondaryBtn = { padding: '10px 20px', border: '1.5px solid ' + T.green, borderRadius: 8, background: '#fff', color: T.green, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
 const subLabel = { fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: T.faint, margin: '0.5rem 0 0.6rem' };
 
-const Employee = ({ user, existing, onSave, onLogout, readOnly = false }) => (
+const Employee = ({ user, existing, onSave, onLogout, readOnly = false }) => {
+  const firma = firmaOf(user);
+  return (
   <div style={{ minHeight: '100vh', background: T.bg, fontFamily: 'system-ui,-apple-system,sans-serif', display: 'flex', flexDirection: 'column' }}>
     {readOnly && (
       <div style={{ background: T.ink, color: '#fff', padding: '8px 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, fontSize: 12.5, flexWrap: 'wrap' }}>
@@ -440,28 +617,32 @@ const Employee = ({ user, existing, onSave, onLogout, readOnly = false }) => (
         <button onClick={onLogout} style={{ background: 'none', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 7, padding: '4px 12px', fontSize: 12, color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}>Vorschau schließen</button>
       </div>
     )}
-    <BrandHeader right={
+    <BrandHeader title={firma.fullLabel} subtitle="Meine Daten" right={
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <span style={{ fontSize: 13, fontWeight: 500, color: T.ink }}>{user.name}</span>
         <button onClick={onLogout} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '6px 12px', fontSize: 12, color: T.muted, cursor: 'pointer' }}>{readOnly ? 'Vorschau schließen' : 'Abmelden'}</button>
       </div>
     } />
     <div style={{ flex: 1, maxWidth: 900, margin: '0 auto', width: '100%', padding: '1.75rem 1.5rem', boxSizing: 'border-box' }}>
-      <GreetingCard name={user.name} />
-      <ProfileForm existing={existing} onSave={onSave} readOnly={readOnly} employeeName={user.name} />
+      <GreetingCard name={user.name} geschlecht={user.geschlecht} />
+      <ProfileForm existing={existing} onSave={onSave} readOnly={readOnly} employeeName={user.name} firma={firma} />
     </div>
   </div>
-);
+  );
+};
 
 // Persönliche Begrüßung von Hanna, oben im Formular — Wunsch vom 17.07.:
 // "Hallo {Vorname}, wir freuen uns auf dich ... LG Hanna". Vorname wird aus
-// dem angemeldeten Namen abgeleitet (erstes Wort).
-const GreetingCard = ({ name }) => {
+// dem angemeldeten Namen abgeleitet (erstes Wort). Seit 20.07.2026: Anrede
+// wechselt zwischen "Lieber"/"Liebe"/neutralem "Hallo" je nach beim Anlegen
+// des Einladungslinks hinterlegtem Geschlecht (siehe greet()-Helfer oben) —
+// ältere Datensätze ohne dieses Feld bleiben bei der neutralen Anrede.
+const GreetingCard = ({ name, geschlecht }) => {
   const firstName = (name || '').trim().split(/\s+/)[0] || '';
   return (
     <div style={{ background: T.mint, border: '1px solid ' + T.line, borderRadius: 12, padding: '1.4rem 1.6rem', marginBottom: '1.5rem' }}>
       <p style={{ margin: 0, fontSize: 15, color: T.ink, lineHeight: 1.65 }}>
-        Hallo {firstName}, wir freuen uns auf dich und benötigen noch ein paar Angaben, damit wir alle den gleichen Stand haben und auch schon alles für den Steuerberater vorbereitet ist.
+        {greet(geschlecht, firstName)}, wir freuen uns auf dich und benötigen noch ein paar Angaben, damit wir alle den gleichen Stand haben und auch schon alles für den Steuerberater vorbereitet ist.
       </p>
       <p style={{ margin: '10px 0 0', fontSize: 14, color: T.muted, fontStyle: 'italic' }}>LG Hanna</p>
     </div>
@@ -472,13 +653,16 @@ const GreetingCard = ({ name }) => {
 // fehlte bisher komplett im Formular, nur die separate E-Mail-Einwilligung
 // gab es schon. Entwurf, kein anwaltlich geprüfter Text — vor dem echten
 // Rollout idealerweise noch von Steuerberater/Datenschutzbeauftragtem
-// gegenchecken lassen (siehe Hinweis am Dokument-Ende).
-const DsgvoCard = ({ f, set }) => (
+// gegenchecken lassen (siehe Hinweis am Dokument-Ende). Seit 20.07.2026
+// firmenabhängig (PhysioPro Bad Schwartau / Pilates Company) — laut Oliver
+// dieselbe verantwortliche Person/Anschrift für beide, nur der Firmenname
+// im Text wechselt.
+const DsgvoCard = ({ f, set, firma }) => (
   <div style={cardS}>
     <p style={subLabel}>Datenschutzhinweis (Art. 13 DSGVO)</p>
     <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.7, marginBottom: 12 }}>
-      <p style={{ margin: '0 0 8px' }}><strong>Verantwortlicher:</strong> Hanna Wrobel, PhysioPro Bad Schwartau, Segeberger Str. 1, 23617 Stockelsdorf · E-Mail: hanna.wrobel@pilatescompany.de</p>
-      <p style={{ margin: '0 0 8px' }}><strong>Zweck der Verarbeitung:</strong> Vorbereitung und Durchführung deines Beschäftigungsverhältnisses bei PhysioPro Bad Schwartau, insbesondere Personalverwaltung sowie Lohn- und Gehaltsabrechnung.</p>
+      <p style={{ margin: '0 0 8px' }}><strong>Verantwortlicher:</strong> Hanna Wrobel, {firma.fullLabel}, Segeberger Str. 1, 23617 Stockelsdorf · E-Mail: hanna.wrobel@pilatescompany.de</p>
+      <p style={{ margin: '0 0 8px' }}><strong>Zweck der Verarbeitung:</strong> Vorbereitung und Durchführung deines Beschäftigungsverhältnisses bei {firma.fullLabel}, insbesondere Personalverwaltung sowie Lohn- und Gehaltsabrechnung.</p>
       <p style={{ margin: '0 0 8px' }}><strong>Rechtsgrundlage:</strong> Art. 6 Abs. 1 lit. b DSGVO (Erfüllung bzw. Anbahnung des Arbeitsverhältnisses) sowie, soweit gesetzlich vorgeschrieben, Art. 6 Abs. 1 lit. c DSGVO (z. B. steuer- und sozialversicherungsrechtliche Pflichten).</p>
       <p style={{ margin: '0 0 8px' }}><strong>Empfänger:</strong> Deine Angaben werden ausschließlich intern sowie an unser Steuerbüro (BTR SUMUS) zur Lohn-/Gehaltsabrechnung weitergegeben, dazu an Krankenkassen, Finanzamt und Sozialversicherungsträger, soweit gesetzlich erforderlich. Keine Weitergabe an sonstige Dritte.</p>
       <p style={{ margin: '0 0 8px' }}><strong>Speicherdauer:</strong> Für die Dauer des Beschäftigungsverhältnisses zzgl. gesetzlicher Aufbewahrungsfristen (i. d. R. bis zu 10 Jahre nach handels- und steuerrechtlichen Vorgaben).</p>
@@ -497,7 +681,7 @@ const DsgvoCard = ({ f, set }) => (
   </div>
 );
 
-const ProfileForm = ({ existing, onSave, readOnly = false, employeeName = '' }) => {
+const ProfileForm = ({ existing, onSave, readOnly = false, employeeName = '', firma = FIRMEN.physiopro }) => {
   const blank = {
     nachname: '', vorname: '', geburtsname: '', geschlecht: '',
     strasse: '', plz: '', ort: '', geburtsdatum: '', geburtsort: '', geburtsland: '', staatsangehoerigkeit: '',
@@ -570,7 +754,7 @@ const ProfileForm = ({ existing, onSave, readOnly = false, employeeName = '' }) 
         const res = await fetch('/.netlify/functions/notify-submission', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ employeeName, profile: toSave }),
+          body: JSON.stringify({ employeeName, profile: toSave, firma: firma?.key }),
         });
         const data = await res.json().catch(() => ({}));
         if (data.ok) setTransmitMsg({ ok: true, text: 'Deine Angaben wurden übermittelt — Hanna und Oliver wurden per E-Mail benachrichtigt.' });
@@ -600,10 +784,10 @@ const ProfileForm = ({ existing, onSave, readOnly = false, employeeName = '' }) 
 
       <div style={readOnly ? { pointerEvents: 'none', opacity: 0.75 } : undefined}>
 
-      <DsgvoCard f={f} set={set} />
+      <DsgvoCard f={f} set={set} firma={firma} />
 
       <div style={cardS}>
-        <p style={subLabel}>Deine Rolle bei PhysioPro Bad Schwartau</p>
+        <p style={subLabel}>Deine Rolle bei {firma.fullLabel}</p>
         <input value={f.position} onChange={e => set('position', e.target.value)} placeholder="Deine Position (z. B. Physiotherapeut:in, Rezeption, Pilates-Trainer:in)" style={fieldS} />
       </div>
 
@@ -670,7 +854,7 @@ const ProfileForm = ({ existing, onSave, readOnly = false, employeeName = '' }) 
         <input type="email" value={f.email} onChange={e => set('email', e.target.value)} placeholder="Deine E-Mail-Adresse" style={fieldS} />
         <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 12.5, color: T.muted, lineHeight: 1.6, cursor: 'pointer' }}>
           <input type="checkbox" checked={f.emailConsent} onChange={e => set('emailConsent', e.target.checked)} style={{ marginTop: 2 }} />
-          <span>Ich bin damit einverstanden, dass PhysioPro Bad Schwartau mich unter dieser E-Mail-Adresse kontaktieren darf.</span>
+          <span>Ich bin damit einverstanden, dass {firma.fullLabel} mich unter dieser E-Mail-Adresse kontaktieren darf.</span>
         </label>
       </div>
 
@@ -909,7 +1093,11 @@ const ProfileForm = ({ existing, onSave, readOnly = false, employeeName = '' }) 
             {transmitMsg && <p style={{ fontSize: 12, color: transmitMsg.ok ? T.greenSoft : T.mauve, margin: 0 }}>{transmitMsg.text}</p>}
           </div>}
 
-      {!readOnly && (
+      {/* Nur für PhysioPro — Wunsch vom 20.07.2026: das separate
+          Profil-Formular (physiopro-fragebogen) existiert bisher nur für
+          PhysioPro-Rollen (therapeut/empfang). Für Pilates Company gibt es
+          das Pendant noch nicht, daher hier ausgeblendet, bis es fertig ist. */}
+      {!readOnly && firma.key === 'physiopro' && (
         <div style={{ ...cardS, background: T.chip, border: 'none' }}>
           <p style={subLabel}>Dein öffentliches Profil</p>
           <p style={{ fontSize: 12, color: T.muted, margin: '0 0 10px', lineHeight: 1.6 }}>Zusätzlich kannst du dein eigenes Profil (Bio/Vorstellung) für unsere Website pflegen — das ist ein separates, kurzes Formular.</p>
@@ -1060,19 +1248,84 @@ const ProfileDetail = ({ s }) => {
   );
 };
 
+// Kryptographisch zufälliges Einladungs-Token im Browser — genau wie
+// serverseitig in session_util.js (randomInviteToken), aber hier per
+// Web-Crypto-API erzeugt: der Admin legt den Datensatz clientseitig an
+// (bestehendes Read-Modify-Write-Muster über commit()), das Token muss also
+// hier entstehen. crypto.getRandomValues ist derselbe CSPRNG wie Node
+// "crypto" — kryptographisch nicht schwächer, nur im Browser statt Server.
+const genInviteToken = () => {
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  let bin = '';
+  bytes.forEach(b => { bin += String.fromCharCode(b); });
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+};
+
+const copyText = async (text) => {
+  try { await navigator.clipboard.writeText(text); alert('Link kopiert — jetzt einfügen und an die Person schicken.'); }
+  catch (e) { prompt('Kopieren nicht möglich — bitte den Link manuell markieren:', text); }
+};
+
+// Ersetzt das bisherige "+ Mitarbeiter hinzufügen" (nur Name) — Wunsch vom
+// 20.07.2026: Admin gibt Firma, Geschlecht (für die Ansprache) und Vorname
+// an, mehr nicht. Alles Weitere (Nachname, Rolle, E-Mail, ...) trägt die
+// Person selbst im eigenen Formular ein. Nach dem Anlegen erscheint der
+// persönliche Einladungslink zum Kopieren.
 const AdminTeamAdd = ({ onAdd }) => {
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState('');
+  const [firma, setFirma] = useState('physiopro');
+  const [geschlecht, setGeschlecht] = useState('');
+  const [vorname, setVorname] = useState('');
   const [saving, setSaving] = useState(false);
-  const reset = () => { setName(''); };
-  const submit = async () => { setSaving(true); try { await onAdd(name.trim()); reset(); setOpen(false); } finally { setSaving(false); } };
+  const [created, setCreated] = useState(null);
+  const reset = () => { setFirma('physiopro'); setGeschlecht(''); setVorname(''); };
+
+  const submit = async () => {
+    if (!vorname.trim()) return;
+    setSaving(true);
+    try {
+      const inviteToken = genInviteToken();
+      const entry = await onAdd({ vorname: vorname.trim(), name: vorname.trim(), firma, geschlecht, inviteToken, viaInvite: true });
+      const link = `${window.location.origin}${window.location.pathname}?invite=${(entry || {}).inviteToken || inviteToken}`;
+      setCreated({ link, vorname: vorname.trim() });
+      reset();
+    } finally { setSaving(false); }
+  };
+
+  if (created) {
+    return (
+      <div style={{ marginBottom: 20, padding: 16, border: '1px solid ' + T.line, borderRadius: 10, background: T.mint }}>
+        <p style={{ fontSize: 13, color: T.ink, margin: '0 0 10px' }}>Einladungslink für <strong>{created.vorname}</strong> erstellt — bitte kopieren und der Person zusenden (z. B. per WhatsApp oder E-Mail):</p>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <code style={{ fontSize: 12, background: T.surface, border: '1px solid ' + T.line, borderRadius: 6, padding: '6px 10px', wordBreak: 'break-all' }}>{created.link}</code>
+          <button onClick={() => copyText(created.link)} style={secondaryBtn}>Kopieren</button>
+        </div>
+        <button onClick={() => { setCreated(null); setOpen(false); }} style={{ background: 'none', border: 'none', color: T.faint, fontSize: 12, marginTop: 10, cursor: 'pointer', padding: 0 }}>Schließen</button>
+      </div>
+    );
+  }
+
   if (!open) return <button onClick={() => setOpen(true)} style={{ ...primaryBtn, marginBottom: 20 }}>+ Mitarbeiter hinzufügen</button>;
   return (
     <div style={{ marginBottom: 20, padding: 16, border: '1px solid ' + T.line, borderRadius: 10 }}>
-      <input value={name} onChange={e => setName(e.target.value)} placeholder="Vor- und Nachname" style={fieldS} />
-      <p style={{ fontSize: 11, color: T.faint, margin: '-6px 0 12px' }}>Rolle und E-Mail-Adresse trägt die Person selbst im Formular ein.</p>
+      <div style={{ display: 'flex', gap: 12 }}>
+        <select value={firma} onChange={e => setFirma(e.target.value)} style={{ ...fieldS, flex: 1 }}>
+          <option value="physiopro">PhysioPro</option>
+          <option value="pilates">Pilates Company</option>
+        </select>
+        <select value={geschlecht} onChange={e => setGeschlecht(e.target.value)} style={{ ...fieldS, flex: 1 }}>
+          <option value="">Geschlecht (für die Ansprache) …</option>
+          <option value="maennlich">männlich</option>
+          <option value="weiblich">weiblich</option>
+          <option value="divers">divers</option>
+          <option value="unbestimmt">unbestimmt / keine Angabe</option>
+        </select>
+      </div>
+      <input value={vorname} onChange={e => setVorname(e.target.value)} placeholder="Vorname" style={fieldS} />
+      <p style={{ fontSize: 11, color: T.faint, margin: '-6px 0 12px' }}>Nachname, Rolle und E-Mail-Adresse trägt die Person selbst im Formular ein. Danach bekommst du hier einen persönlichen Link zum Weiterleiten.</p>
       <div style={{ display: 'flex', gap: 8 }}>
-        <button onClick={submit} disabled={saving || !name.trim()} style={{ ...primaryBtn, opacity: saving || !name.trim() ? 0.6 : 1, cursor: saving || !name.trim() ? 'default' : 'pointer' }}>{saving ? 'Wird gespeichert …' : 'Hinzufügen'}</button>
+        <button onClick={submit} disabled={saving || !vorname.trim()} style={{ ...primaryBtn, opacity: saving || !vorname.trim() ? 0.6 : 1, cursor: saving || !vorname.trim() ? 'default' : 'pointer' }}>{saving ? 'Wird erstellt …' : 'Einladungslink erstellen'}</button>
         <button onClick={() => { reset(); setOpen(false); }} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 8, padding: '10px 16px', fontSize: 13, color: T.muted, cursor: 'pointer' }}>Abbrechen</button>
       </div>
     </div>
@@ -1096,17 +1349,19 @@ const Admin = ({ user, employees, profiles, onResetPin, onAddEmployee, onDelEmpl
         <div style={cardS}>
           <Label>Status ({doneCount}/{employees.length} vollständig)</Label>
           <p style={{ fontSize: 12, color: T.muted, margin: '-0.4rem 0 1.2rem', lineHeight: 1.6 }}>Jede Person trägt ihre eigenen Daten selbst ein. Zum Aufklappen auf eine Zeile klicken.</p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,1.5fr) minmax(0,1fr) minmax(0,1fr) auto', fontSize: 11, color: T.faint, letterSpacing: '0.08em', textTransform: 'uppercase', padding: '0 0 8px', borderBottom: '1px solid ' + T.lineSoft }}>
-            <span>Name</span><span>Position</span><span>Status</span><span>Zuletzt aktualisiert</span><span></span>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.6fr) minmax(0,0.9fr) minmax(0,1.3fr) minmax(0,0.9fr) minmax(0,1fr) auto', fontSize: 11, color: T.faint, letterSpacing: '0.08em', textTransform: 'uppercase', padding: '0 0 8px', borderBottom: '1px solid ' + T.lineSoft }}>
+            <span>Name</span><span>Firma</span><span>Position</span><span>Status</span><span>Zuletzt aktualisiert</span><span></span>
           </div>
           {rows.map(({ emp, s, complete }) => (
             <div key={emp.id}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,1.5fr) minmax(0,1fr) minmax(0,1fr) auto', alignItems: 'center', padding: '11px 0', borderBottom: '1px solid ' + T.lineSoft, fontSize: 13, color: T.ink }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.6fr) minmax(0,0.9fr) minmax(0,1.3fr) minmax(0,0.9fr) minmax(0,1fr) auto', alignItems: 'center', padding: '11px 0', borderBottom: '1px solid ' + T.lineSoft, fontSize: 13, color: T.ink }}>
                 <span onClick={() => setOpenId(openId === emp.id ? null : emp.id)} style={{ cursor: 'pointer' }}>{emp.name}</span>
+                <span onClick={() => setOpenId(openId === emp.id ? null : emp.id)} style={{ color: firmaOf(emp).color, fontSize: 12, cursor: 'pointer' }}>{firmaOf(emp).label}</span>
                 <span onClick={() => setOpenId(openId === emp.id ? null : emp.id)} style={{ color: T.muted, cursor: 'pointer' }}>{s?.position || '–'}</span>
                 <span onClick={() => setOpenId(openId === emp.id ? null : emp.id)} style={{ color: s?.submitted ? T.green : complete ? T.greenSoft : (s ? T.mauve : T.faint), fontWeight: 500, cursor: 'pointer' }}>{s?.submitted ? '✓ übermittelt' : complete ? '✓ vollständig' : s ? 'teilweise' : 'ausstehend'}</span>
                 <span onClick={() => setOpenId(openId === emp.id ? null : emp.id)} style={{ color: T.faint, fontSize: 12, cursor: 'pointer' }}>{s?.updated || '–'}</span>
-                <span style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                <span style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                  {emp.inviteToken && <button onClick={() => copyText(`${window.location.origin}${window.location.pathname}?invite=${emp.inviteToken}`)} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '5px 10px', fontSize: 12, color: T.muted, cursor: 'pointer' }} title="Persönlichen Einladungslink erneut kopieren">Link</button>}
                   <button onClick={() => onPreviewEmployee(emp.id)} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '5px 10px', fontSize: 12, color: T.muted, cursor: 'pointer' }} title="Zeigt die Formular-Ansicht dieser Person read-only an">Vorschau</button>
                   {emp.pinSet && <button onClick={() => { if (confirm('PIN für ' + emp.name + ' zurücksetzen?')) onResetPin(emp.id); }} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '5px 10px', fontSize: 12, color: T.muted, cursor: 'pointer' }}>PIN Reset</button>}
                   <button onClick={() => { if (confirm(emp.name + ' endgültig entfernen? Der Zugang wird sofort gesperrt.')) onDelEmployee(emp.id); }} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '5px 10px', fontSize: 12, color: '#c0392b', cursor: 'pointer' }}>Löschen</button>
