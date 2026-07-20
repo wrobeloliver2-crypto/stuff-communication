@@ -16,6 +16,11 @@
 // Netlify-Umgebungsvariable — NICHT im Code, da dieses Repo öffentlich auf
 // GitHub liegt (siehe PROJECT.md/Zugangsdaten-VERTRAULICH.md: Secrets
 // grundsätzlich nur als Netlify-Env-Var, nie im Quelltext).
+//
+// 20.07.2026, 18:54 UTC: ADMIN_PASSWORD_OLIVER/_HANNA erneut gesetzt (erster
+// Versuch griff aus unbekanntem Grund nicht am Runtime durch) — dieser
+// Kommentar erzwingt einen echten Neu-Build/-Deploy, damit die Functions die
+// aktuellen Werte sicher einlesen.
 const { mintAdminToken } = require('./session_util');
 
 const ADMINS = {
