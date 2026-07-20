@@ -1,18 +1,26 @@
 // Server-seitige Prüfung des Verwaltung-Logins für die PhysioPro-Bad-
 // Schwartau-Onboarding-Site — eigene, von stuff-communication unabhängige
-// Function mit eigener ADMIN_PASSWORD-Umgebungsvariable (eigenes Netlify-
-// Projekt), damit ein kompromittiertes Passwort auf der einen Site nicht
-// automatisch auch die andere betrifft.
+// Function mit eigenen Umgebungsvariablen (eigenes Netlify-Projekt), damit
+// ein kompromittiertes Passwort auf der einen Site nicht automatisch auch
+// die andere betrifft.
 //
 // 20.07.2026: liefert bei Erfolg zusätzlich ein signiertes Session-Token
 // (24h gültig, siehe session_util.js) — Grundlage dafür, dass /.netlify/
 // functions/data künftig nur noch mit gültigem Token Daten herausgibt,
 // statt wie bisher offen für jeden erreichbar zu sein.
+//
+// 20.07.2026 (Nachtrag, Abends): Auf Wunsch von Oliver von einem einzigen,
+// für Oliver UND Hanna gemeinsamen ADMIN_PASSWORD auf zwei echte,
+// individuelle Passwörter umgestellt (war offener To-do-Punkt in
+// PROJECT.md). Jede Person hat jetzt ihr eigenes Passwort in einer eigenen
+// Netlify-Umgebungsvariable — NICHT im Code, da dieses Repo öffentlich auf
+// GitHub liegt (siehe PROJECT.md/Zugangsdaten-VERTRAULICH.md: Secrets
+// grundsätzlich nur als Netlify-Env-Var, nie im Quelltext).
 const { mintAdminToken } = require('./session_util');
 
-const ADMIN_NAMES = {
-  'oliver.wrobel@pilatescompany.de': 'Oliver Wrobel',
-  'hanna.wrobel@pilatescompany.de': 'Hanna Wrobel',
+const ADMINS = {
+  'oliver.wrobel@pilatescompany.de': { name: 'Oliver Wrobel', envVar: 'ADMIN_PASSWORD_OLIVER' },
+  'hanna.wrobel@pilatescompany.de': { name: 'Hanna Wrobel', envVar: 'ADMIN_PASSWORD_HANNA' },
 };
 
 const HEADERS = {
@@ -27,17 +35,21 @@ exports.handler = async (event) => {
 
   try {
     const { email, password } = JSON.parse(event.body || '{}');
-    const expected = process.env.ADMIN_PASSWORD;
-    const name = ADMIN_NAMES[String(email || '').toLowerCase().trim()];
+    const admin = ADMINS[String(email || '').toLowerCase().trim()];
 
+    if (!admin) {
+      return { statusCode: 401, headers: HEADERS, body: JSON.stringify({ ok: false, error: 'invalid_credentials' }) };
+    }
+
+    const expected = process.env[admin.envVar];
     if (!expected) {
-      console.error('ADMIN_PASSWORD ist nicht gesetzt — Verwaltung-Login kann niemand nutzen.');
+      console.error(admin.envVar + ' ist nicht gesetzt — Verwaltung-Login für ' + admin.name + ' kann derzeit niemand nutzen.');
       return { statusCode: 500, headers: HEADERS, body: JSON.stringify({ ok: false, error: 'server_misconfigured' }) };
     }
 
-    if (name && password === expected) {
-      const token = mintAdminToken({ email: String(email).toLowerCase().trim(), name });
-      return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ ok: true, name, email, token }) };
+    if (password === expected) {
+      const token = mintAdminToken({ email: String(email).toLowerCase().trim(), name: admin.name });
+      return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ ok: true, name: admin.name, email, token }) };
     }
     return { statusCode: 401, headers: HEADERS, body: JSON.stringify({ ok: false, error: 'invalid_credentials' }) };
   } catch (err) {
