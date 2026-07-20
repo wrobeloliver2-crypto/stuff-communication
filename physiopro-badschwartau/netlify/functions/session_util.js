@@ -13,12 +13,17 @@
 // für HMAC-Signaturen, PIN-Hashing und sichere Zufalls-Tokens vollständig.
 const crypto = require('crypto');
 
-// Wiederverwendung von ADMIN_PASSWORD als HMAC-Secret, damit kein weiterer
-// Netlify-Umgebungsvariable-Schritt vor dem Deploy nötig ist. ADMIN_PASSWORD
-// ist bereits vertraulich (nur als Netlify-Env-Var hinterlegt, von Oliver
-// rotierbar) — hier wird es nur als Signier-Schlüssel verwendet, nie selbst
-// übertragen oder zurückgegeben.
-const secret = () => process.env.ADMIN_PASSWORD || '';
+// Eigener, dedizierter HMAC-Signierschlüssel (Netlify-Env-Var SESSION_SECRET,
+// zufälliger Wert, nirgends sonst verwendet). Ursprünglich wurde hier
+// ADMIN_PASSWORD wiederverwendet — das ging am 20.07.2026 schief, als der
+// Admin-Login auf zwei individuelle Passwörter (ADMIN_PASSWORD_OLIVER/_HANNA)
+// umgestellt und das alte gemeinsame ADMIN_PASSWORD gelöscht wurde: damit
+// fehlte plötzlich auch der Signierschlüssel und JEDER Login (Admin wie
+// Mitarbeiter) scheiterte mit server_misconfigured. Lehre daraus: der
+// Signierschlüssel gehört von Login-Passwörtern getrennt. Ein Wechsel dieses
+// Werts macht alle bestehenden Sitzungen ungültig (alle müssen sich neu
+// anmelden) — Daten gehen dabei nicht verloren.
+const secret = () => process.env.SESSION_SECRET || '';
 
 const b64url = buf => Buffer.from(buf).toString('base64url');
 const fromB64url = str => Buffer.from(str, 'base64url');
