@@ -21,7 +21,7 @@ const LABELS = {
 const lbl = (field, v) => (v && LABELS[field] && LABELS[field][v]) || v || '–';
 const d = v => (v === undefined || v === null || v === '') ? '–' : v;
 
-const FIRMEN_LABEL = { physiopro: 'PhysioPro Bad Schwartau', pilates: 'Pilates Company' };
+const FIRMEN_LABEL = { physiopro: 'PhysioPro Bad Schwartau', physiopro_stockelsdorf: 'PhysioPro Stockelsdorf', pilates: 'Pilates Company' };
 
 const buildSummary = (name, s, firmaLabel) => {
   const lines = [];

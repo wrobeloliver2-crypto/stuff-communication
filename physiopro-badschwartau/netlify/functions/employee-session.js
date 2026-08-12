@@ -38,6 +38,7 @@ const saveEmployees = async (list) => {
 const publicMeta = (emp) => ({
   employeeId: emp.id,
   vorname: emp.vorname || (emp.name || '').trim().split(/\s+/)[0] || '',
+  nachname: emp.nachname || '',
   name: emp.name || emp.vorname || '',
   firma: emp.firma || 'physiopro',
   geschlecht: emp.geschlecht || '',
