@@ -44,13 +44,17 @@ const clearSession = () => { try { localStorage.removeItem(SESSION_KEY); } catch
 const loadSession = () => { try { return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch (e) { return null; } };
 const authHeaders = (token) => (token ? { Authorization: 'Bearer ' + token } : {});
 
-// Zwei Firmen, ein Portal (Wunsch vom 20.07.2026: künftig auch für Pilates
-// Company nutzbar, nicht mehr nur PhysioPro Bad Schwartau). Verantwortliche
-// Person/Anschrift laut Oliver für beide Firmen identisch — nur der
-// Firmenname im Datenschutztext wechselt.
+// Ein Portal für alle Firmen/Standorte (Wunsch vom 20.07.2026, erweitert am
+// 12.08.2026: PhysioPro gibt es jetzt an zwei Standorten — Bad Schwartau und
+// Stockelsdorf — plus Pilates Company). Verantwortliche Person/Anschrift laut
+// Oliver für alle identisch — nur der Firmen-/Standortname in den Texten
+// wechselt. Der Alt-Key "physiopro" (Datensätze vor dem 12.08.) bedeutet
+// weiterhin Bad Schwartau. isPhysio steuert Physio-spezifisches (z. B. den
+// Link zum physiopro-fragebogen-Profil).
 const FIRMEN = {
-  physiopro: { key: 'physiopro', label: 'PhysioPro', fullLabel: 'PhysioPro Bad Schwartau', logo: '/logo.png', color: T.green },
-  pilates: { key: 'pilates', label: 'Pilates Company', fullLabel: 'Pilates Company', logo: '/logo-pilates.png', color: T.mauve },
+  physiopro: { key: 'physiopro', label: 'PhysioPro', fullLabel: 'PhysioPro Bad Schwartau', isPhysio: true, logo: '/logo.png', color: T.green },
+  physiopro_stockelsdorf: { key: 'physiopro_stockelsdorf', label: 'PhysioPro', fullLabel: 'PhysioPro Stockelsdorf', isPhysio: true, logo: '/logo.png', color: T.green },
+  pilates: { key: 'pilates', label: 'Pilates Company', fullLabel: 'Pilates Company', isPhysio: false, logo: '/logo-pilates.png', color: T.mauve },
 };
 const firmaOf = (obj) => FIRMEN[obj?.firma] || FIRMEN.physiopro;
 
@@ -305,7 +309,7 @@ const App = () => {
           if (data.ok) {
             sessionTokenRef.current = saved.token;
             setSession({ role: 'employee', token: saved.token });
-            setUser({ id: data.employeeId, name: data.name, vorname: data.vorname, firma: data.firma, geschlecht: data.geschlecht });
+            setUser({ id: data.employeeId, name: data.name, vorname: data.vorname, nachname: data.nachname, firma: data.firma, geschlecht: data.geschlecht });
             setPage('employee');
             loadAll();
           } else clearSession();
@@ -347,7 +351,7 @@ const App = () => {
   const applyEmployeeSession = (data) => {
     sessionTokenRef.current = data.token;
     setSession({ role: 'employee', token: data.token });
-    setUser({ id: data.employeeId, name: data.name, vorname: data.vorname, firma: data.firma, geschlecht: data.geschlecht });
+    setUser({ id: data.employeeId, name: data.name, vorname: data.vorname, nachname: data.nachname, firma: data.firma, geschlecht: data.geschlecht });
     saveSession({ token: data.token });
     setPage('employee');
     loadAll();
@@ -631,7 +635,7 @@ const Employee = ({ user, existing, onSave, onLogout, readOnly = false }) => {
     } />
     <div style={{ flex: 1, maxWidth: 900, margin: '0 auto', width: '100%', padding: '1.75rem 1.5rem', boxSizing: 'border-box' }}>
       <GreetingCard name={user.name} geschlecht={user.geschlecht} />
-      <ProfileForm existing={existing} onSave={onSave} readOnly={readOnly} employeeName={user.name} firma={firma} />
+      <ProfileForm existing={existing} onSave={onSave} readOnly={readOnly} employeeName={user.name} firma={firma} seed={user} />
     </div>
   </div>
   );
@@ -687,7 +691,7 @@ const DsgvoCard = ({ f, set, firma }) => (
   </div>
 );
 
-const ProfileForm = ({ existing, onSave, readOnly = false, employeeName = '', firma = FIRMEN.physiopro }) => {
+const ProfileForm = ({ existing, onSave, readOnly = false, employeeName = '', firma = FIRMEN.physiopro, seed = null }) => {
   const blank = {
     nachname: '', vorname: '', geburtsname: '', geschlecht: '',
     strasse: '', plz: '', ort: '', geburtsdatum: '', geburtsort: '', geburtsland: '', staatsangehoerigkeit: '',
@@ -711,7 +715,13 @@ const ProfileForm = ({ existing, onSave, readOnly = false, employeeName = '', fi
     dsgvoBestaetigt: false, dsgvoDatum: '',
     submitted: false, submittedAt: '',
   };
-  const [f, setF] = useState({ ...blank, ...(existing || {}) });
+  // Vorname/Nachname/Geschlecht sind seit 12.08.2026 schon beim Anlegen des
+  // Zugangs bekannt — hier als Vorbelegung übernommen (nur solange die Person
+  // selbst noch nichts gespeichert hat; eigene Eingaben haben immer Vorrang
+  // und bleiben korrigierbar).
+  const seedVals = {};
+  if (seed) for (const k of ['vorname', 'nachname', 'geschlecht']) { if (seed[k]) seedVals[k] = seed[k]; }
+  const [f, setF] = useState({ ...blank, ...seedVals, ...(existing || {}) });
   const [qLabel, setQLabel] = useState('');
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState(null);
@@ -1103,7 +1113,7 @@ const ProfileForm = ({ existing, onSave, readOnly = false, employeeName = '', fi
           Profil-Formular (physiopro-fragebogen) existiert bisher nur für
           PhysioPro-Rollen (therapeut/empfang). Für Pilates Company gibt es
           das Pendant noch nicht, daher hier ausgeblendet, bis es fertig ist. */}
-      {!readOnly && firma.key === 'physiopro' && (
+      {!readOnly && firma.isPhysio && (
         <div style={{ ...cardS, background: T.chip, border: 'none' }}>
           <p style={subLabel}>Dein öffentliches Profil</p>
           <p style={{ fontSize: 12, color: T.muted, margin: '0 0 10px', lineHeight: 1.6 }}>Zusätzlich kannst du dein eigenes Profil (Bio/Vorstellung) für unsere Website pflegen — das ist ein separates, kurzes Formular.</p>
@@ -1268,44 +1278,83 @@ const genInviteToken = () => {
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 };
 
-const copyText = async (text) => {
-  try { await navigator.clipboard.writeText(text); alert('Link kopiert — jetzt einfügen und an die Person schicken.'); }
-  catch (e) { prompt('Kopieren nicht möglich — bitte den Link manuell markieren:', text); }
+const copyText = async (text, doneMsg = 'Kopiert — jetzt einfügen und an die Person schicken.') => {
+  try { await navigator.clipboard.writeText(text); alert(doneMsg); }
+  catch (e) { prompt('Kopieren nicht möglich — bitte den Text manuell markieren:', text); }
 };
 
-// Ersetzt das bisherige "+ Mitarbeiter hinzufügen" (nur Name) — Wunsch vom
-// 20.07.2026: Admin gibt Firma, Geschlecht (für die Ansprache) und Vorname
-// an, mehr nicht. Alles Weitere (Nachname, Rolle, E-Mail, ...) trägt die
-// Person selbst im eigenen Formular ein. Nach dem Anlegen erscheint der
-// persönliche Einladungslink zum Kopieren.
+const inviteLinkFor = (emp) => `${window.location.origin}${window.location.pathname}?invite=${emp.inviteToken}`;
+
+// Automatisch generierter Einladungstext mit eingebettetem persönlichen Link
+// (Wunsch vom 12.08.2026) — zum Kopieren und Verschicken per WhatsApp/E-Mail.
+// Ton und Eckpunkte angelehnt an das gedruckte Anschreiben (Signatur "Hanna",
+// nur E-Mail als Rückkanal). Anrede über greet() je nach beim Anlegen
+// angegebenem Geschlecht; bei bereits festgelegter PIN entfällt der
+// PIN-Festlegen-Satz.
+const inviteMessage = (emp) => {
+  const firma = firmaOf(emp);
+  const vorname = emp.vorname || (emp.name || '').trim().split(/\s+/)[0] || '';
+  return [
+    `${greet(emp.geschlecht, vorname)},`,
+    '',
+    `herzlich willkommen bei ${firma.fullLabel}! Damit wir alles für dich vorbereiten können — auch für die Lohn- und Gehaltsabrechnung — trage deine Daten bitte in unserem Onboarding-Bereich ein.`,
+    '',
+    'Dein persönlicher Zugang:',
+    inviteLinkFor(emp),
+    '',
+    emp.pinSet
+      ? 'Du meldest dich einfach mit deiner PIN an. Du kannst jederzeit zwischenspeichern und später weitermachen — nichts geht verloren.'
+      : 'Beim ersten Öffnen legst du dir einmalig eine eigene PIN fest (4–6 Ziffern). Du kannst jederzeit zwischenspeichern und später weitermachen — nichts geht verloren.',
+    '',
+    'Falls du Fragen hast, melde dich einfach per E-Mail: hanna.wrobel@pilatescompany.de',
+    '',
+    'Liebe Grüße',
+    'Hanna',
+  ].join('\n');
+};
+
+// "+ Mitarbeiter hinzufügen" — seit 12.08.2026: Admin gibt Firma/Standort,
+// Geschlecht (für die Ansprache) sowie Vor- UND Nachname an (Nachname ist
+// jetzt Pflicht, Wunsch vom 12.08.). Rolle und E-Mail-Adresse trägt die
+// Person weiterhin selbst im eigenen Formular ein. Nach dem Anlegen erscheint
+// der fertige Einladungstext mit eingebettetem persönlichen Link.
 const AdminTeamAdd = ({ onAdd }) => {
   const [open, setOpen] = useState(false);
   const [firma, setFirma] = useState('physiopro');
   const [geschlecht, setGeschlecht] = useState('');
   const [vorname, setVorname] = useState('');
+  const [nachname, setNachname] = useState('');
   const [saving, setSaving] = useState(false);
   const [created, setCreated] = useState(null);
-  const reset = () => { setFirma('physiopro'); setGeschlecht(''); setVorname(''); };
+  const reset = () => { setFirma('physiopro'); setGeschlecht(''); setVorname(''); setNachname(''); };
+  const ready = vorname.trim() && nachname.trim();
 
   const submit = async () => {
-    if (!vorname.trim()) return;
+    if (!ready) return;
     setSaving(true);
     try {
       const inviteToken = genInviteToken();
-      const entry = await onAdd({ vorname: vorname.trim(), name: vorname.trim(), firma, geschlecht, inviteToken, viaInvite: true });
-      const link = `${window.location.origin}${window.location.pathname}?invite=${(entry || {}).inviteToken || inviteToken}`;
-      setCreated({ link, vorname: vorname.trim() });
+      const record = {
+        vorname: vorname.trim(),
+        nachname: nachname.trim(),
+        name: `${vorname.trim()} ${nachname.trim()}`,
+        firma, geschlecht, inviteToken, viaInvite: true,
+      };
+      const entry = await onAdd(record);
+      setCreated({ ...record, ...(entry || {}) });
       reset();
     } finally { setSaving(false); }
   };
 
   if (created) {
+    const text = inviteMessage(created);
     return (
       <div style={{ marginBottom: 20, padding: 16, border: '1px solid ' + T.line, borderRadius: 10, background: T.mint }}>
-        <p style={{ fontSize: 13, color: T.ink, margin: '0 0 10px' }}>Einladungslink für <strong>{created.vorname}</strong> erstellt — bitte kopieren und der Person zusenden (z. B. per WhatsApp oder E-Mail):</p>
+        <p style={{ fontSize: 13, color: T.ink, margin: '0 0 10px' }}>Zugang für <strong>{created.name}</strong> ({firmaOf(created).fullLabel}) erstellt. Hier ist die fertige Einladung mit persönlichem Link — einfach kopieren und verschicken (z. B. per WhatsApp oder E-Mail):</p>
+        <pre style={{ fontSize: 12.5, fontFamily: 'inherit', background: T.surface, border: '1px solid ' + T.line, borderRadius: 8, padding: '12px 14px', whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: '0 0 10px', color: T.ink, lineHeight: 1.6 }}>{text}</pre>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <code style={{ fontSize: 12, background: T.surface, border: '1px solid ' + T.line, borderRadius: 6, padding: '6px 10px', wordBreak: 'break-all' }}>{created.link}</code>
-          <button onClick={() => copyText(created.link)} style={secondaryBtn}>Kopieren</button>
+          <button onClick={() => copyText(text, 'Einladungstext kopiert — jetzt einfügen und an ' + created.vorname + ' schicken.')} style={secondaryBtn}>Text kopieren</button>
+          <button onClick={() => copyText(inviteLinkFor(created), 'Link kopiert.')} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 8, padding: '10px 16px', fontSize: 13, color: T.muted, cursor: 'pointer' }}>Nur den Link kopieren</button>
         </div>
         <button onClick={() => { setCreated(null); setOpen(false); }} style={{ background: 'none', border: 'none', color: T.faint, fontSize: 12, marginTop: 10, cursor: 'pointer', padding: 0 }}>Schließen</button>
       </div>
@@ -1317,8 +1366,7 @@ const AdminTeamAdd = ({ onAdd }) => {
     <div style={{ marginBottom: 20, padding: 16, border: '1px solid ' + T.line, borderRadius: 10 }}>
       <div style={{ display: 'flex', gap: 12 }}>
         <select value={firma} onChange={e => setFirma(e.target.value)} style={{ ...fieldS, flex: 1 }}>
-          <option value="physiopro">PhysioPro</option>
-          <option value="pilates">Pilates Company</option>
+          {Object.values(FIRMEN).map(fi => <option key={fi.key} value={fi.key}>{fi.fullLabel}</option>)}
         </select>
         <select value={geschlecht} onChange={e => setGeschlecht(e.target.value)} style={{ ...fieldS, flex: 1 }}>
           <option value="">Geschlecht (für die Ansprache) …</option>
@@ -1328,10 +1376,13 @@ const AdminTeamAdd = ({ onAdd }) => {
           <option value="unbestimmt">unbestimmt / keine Angabe</option>
         </select>
       </div>
-      <input value={vorname} onChange={e => setVorname(e.target.value)} placeholder="Vorname" style={fieldS} />
-      <p style={{ fontSize: 11, color: T.faint, margin: '-6px 0 12px' }}>Nachname, Rolle und E-Mail-Adresse trägt die Person selbst im Formular ein. Danach bekommst du hier einen persönlichen Link zum Weiterleiten.</p>
+      <div style={{ display: 'flex', gap: 12 }}>
+        <input value={vorname} onChange={e => setVorname(e.target.value)} placeholder="Vorname" style={{ ...fieldS, flex: 1 }} />
+        <input value={nachname} onChange={e => setNachname(e.target.value)} placeholder="Nachname" style={{ ...fieldS, flex: 1 }} />
+      </div>
+      <p style={{ fontSize: 11, color: T.faint, margin: '-6px 0 12px' }}>Rolle und E-Mail-Adresse trägt die Person selbst im Formular ein. Nach dem Anlegen bekommst du hier einen fertigen Einladungstext mit persönlichem Link zum Weiterleiten.</p>
       <div style={{ display: 'flex', gap: 8 }}>
-        <button onClick={submit} disabled={saving || !vorname.trim()} style={{ ...primaryBtn, opacity: saving || !vorname.trim() ? 0.6 : 1, cursor: saving || !vorname.trim() ? 'default' : 'pointer' }}>{saving ? 'Wird erstellt …' : 'Einladungslink erstellen'}</button>
+        <button onClick={submit} disabled={saving || !ready} style={{ ...primaryBtn, opacity: saving || !ready ? 0.6 : 1, cursor: saving || !ready ? 'default' : 'pointer' }}>{saving ? 'Wird erstellt …' : 'Zugang & Einladung erstellen'}</button>
         <button onClick={() => { reset(); setOpen(false); }} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 8, padding: '10px 16px', fontSize: 13, color: T.muted, cursor: 'pointer' }}>Abbrechen</button>
       </div>
     </div>
@@ -1355,19 +1406,19 @@ const Admin = ({ user, employees, profiles, onResetPin, onAddEmployee, onDelEmpl
         <div style={cardS}>
           <Label>Status ({doneCount}/{employees.length} vollständig)</Label>
           <p style={{ fontSize: 12, color: T.muted, margin: '-0.4rem 0 1.2rem', lineHeight: 1.6 }}>Jede Person trägt ihre eigenen Daten selbst ein. Zum Aufklappen auf eine Zeile klicken.</p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.6fr) minmax(0,0.9fr) minmax(0,1.3fr) minmax(0,0.9fr) minmax(0,1fr) auto', fontSize: 11, color: T.faint, letterSpacing: '0.08em', textTransform: 'uppercase', padding: '0 0 8px', borderBottom: '1px solid ' + T.lineSoft }}>
-            <span>Name</span><span>Firma</span><span>Position</span><span>Status</span><span>Zuletzt aktualisiert</span><span></span>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.5fr) minmax(0,1.2fr) minmax(0,1.2fr) minmax(0,0.9fr) minmax(0,1fr) auto', fontSize: 11, color: T.faint, letterSpacing: '0.08em', textTransform: 'uppercase', padding: '0 0 8px', borderBottom: '1px solid ' + T.lineSoft }}>
+            <span>Name</span><span>Firma / Standort</span><span>Position</span><span>Status</span><span>Zuletzt aktualisiert</span><span></span>
           </div>
           {rows.map(({ emp, s, complete }) => (
             <div key={emp.id}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.6fr) minmax(0,0.9fr) minmax(0,1.3fr) minmax(0,0.9fr) minmax(0,1fr) auto', alignItems: 'center', padding: '11px 0', borderBottom: '1px solid ' + T.lineSoft, fontSize: 13, color: T.ink }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.5fr) minmax(0,1.2fr) minmax(0,1.2fr) minmax(0,0.9fr) minmax(0,1fr) auto', alignItems: 'center', padding: '11px 0', borderBottom: '1px solid ' + T.lineSoft, fontSize: 13, color: T.ink }}>
                 <span onClick={() => setOpenId(openId === emp.id ? null : emp.id)} style={{ cursor: 'pointer' }}>{emp.name}</span>
-                <span onClick={() => setOpenId(openId === emp.id ? null : emp.id)} style={{ color: firmaOf(emp).color, fontSize: 12, cursor: 'pointer' }}>{firmaOf(emp).label}</span>
+                <span onClick={() => setOpenId(openId === emp.id ? null : emp.id)} style={{ color: firmaOf(emp).color, fontSize: 12, cursor: 'pointer' }}>{firmaOf(emp).fullLabel}</span>
                 <span onClick={() => setOpenId(openId === emp.id ? null : emp.id)} style={{ color: T.muted, cursor: 'pointer' }}>{s?.position || '–'}</span>
                 <span onClick={() => setOpenId(openId === emp.id ? null : emp.id)} style={{ color: s?.submitted ? T.green : complete ? T.greenSoft : (s ? T.mauve : T.faint), fontWeight: 500, cursor: 'pointer' }}>{s?.submitted ? '✓ übermittelt' : complete ? '✓ vollständig' : s ? 'teilweise' : 'ausstehend'}</span>
                 <span onClick={() => setOpenId(openId === emp.id ? null : emp.id)} style={{ color: T.faint, fontSize: 12, cursor: 'pointer' }}>{s?.updated || '–'}</span>
                 <span style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                  {emp.inviteToken && <button onClick={() => copyText(`${window.location.origin}${window.location.pathname}?invite=${emp.inviteToken}`)} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '5px 10px', fontSize: 12, color: T.muted, cursor: 'pointer' }} title="Persönlichen Einladungslink erneut kopieren">Link</button>}
+                  {emp.inviteToken && <button onClick={() => copyText(inviteMessage(emp), 'Einladungstext kopiert — jetzt einfügen und an die Person schicken.')} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '5px 10px', fontSize: 12, color: T.muted, cursor: 'pointer' }} title="Fertigen Einladungstext mit persönlichem Link erneut kopieren">Einladung</button>}
                   <button onClick={() => onPreviewEmployee(emp.id)} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '5px 10px', fontSize: 12, color: T.muted, cursor: 'pointer' }} title="Zeigt die Formular-Ansicht dieser Person read-only an">Vorschau</button>
                   {emp.pinSet && <button onClick={() => { if (confirm('PIN für ' + emp.name + ' zurücksetzen?')) onResetPin(emp.id); }} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '5px 10px', fontSize: 12, color: T.muted, cursor: 'pointer' }}>PIN Reset</button>}
                   <button onClick={() => { if (confirm(emp.name + ' endgültig entfernen? Der Zugang wird sofort gesperrt.')) onDelEmployee(emp.id); }} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '5px 10px', fontSize: 12, color: '#c0392b', cursor: 'pointer' }}>Löschen</button>
