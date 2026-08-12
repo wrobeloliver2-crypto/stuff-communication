@@ -233,6 +233,7 @@ const App = () => {
   const [employees, setEmployees] = useState(EMPLOYEES);
   const [profiles, setProfiles] = useState([]);
   const [previewEmployeeId, setPreviewEmployeeId] = useState(null);
+  const [printEmployeeId, setPrintEmployeeId] = useState(null);
   const dataLoaded = useRef(false);
   const versionsRef = useRef({});
   const dataRef = useRef({ employees: EMPLOYEES, profile: [] });
@@ -437,11 +438,15 @@ const App = () => {
   if (page === 'invite' && invite && !invite.error) return <InviteWelcome invite={invite} onClaim={claimPin} onLogin={loginPin} />;
   if (page === 'login') return <Login employees={employees} inviteError={invite?.error} onPinSetup={(id, pin) => claimPin({ employeeId: id, pin })} onEmployeeLogin={(id, pin) => loginPin({ employeeId: id, pin })} onAdminLogin={adminLogin} />;
   if (page === 'employee' && user) return <Employee user={user} existing={profiles.find(s => s.id === user.id) || null} onSave={fields => saveProfile(user.id, fields)} onLogout={logout} />;
+  if (page === 'admin' && user?.isAdmin && printEmployeeId) {
+    const printUser = employees.find(e => e.id === printEmployeeId);
+    if (printUser) return <PrintSheet emp={printUser} s={profiles.find(s => s.id === printUser.id) || null} onClose={() => setPrintEmployeeId(null)} />;
+  }
   if (page === 'admin' && user?.isAdmin && previewEmployeeId) {
     const previewUser = employees.find(e => e.id === previewEmployeeId);
     if (previewUser) return <Employee user={previewUser} existing={profiles.find(s => s.id === previewUser.id) || null} onSave={() => {}} onLogout={() => setPreviewEmployeeId(null)} readOnly />;
   }
-  if (page === 'admin' && user?.isAdmin) return <Admin user={user} employees={employees} profiles={profiles} onResetPin={resetPin} onAddEmployee={addEmployee} onDelEmployee={delEmployee} onPreviewEmployee={setPreviewEmployeeId} onLogout={logout} />;
+  if (page === 'admin' && user?.isAdmin) return <Admin user={user} employees={employees} profiles={profiles} onResetPin={resetPin} onAddEmployee={addEmployee} onDelEmployee={delEmployee} onPreviewEmployee={setPreviewEmployeeId} onPrintEmployee={setPrintEmployeeId} onLogout={logout} />;
   return null;
 };
 
@@ -1133,12 +1138,23 @@ const LABELS = {
 };
 const lbl = (field, v) => (v && LABELS[field] && LABELS[field][v]) || v || '–';
 
+// Datumsfelder kommen aus <input type="date"> im ISO-Format (2026-08-12).
+// In der Verwaltungsansicht und besonders im Ausdruck fürs Steuerbüro soll
+// aber das deutsche Format stehen (12.08.2026).
+const deDate = v => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((v || '').toString().trim());
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : (v || '–');
+};
+
 const DetailRow = ({ label, value }) => <div><span style={{ color: T.faint }}>{label}: </span>{value}</div>;
 
-const ProfileDetail = ({ s }) => {
+// hideConsents: im Steuerbüro-Datenblatt (PrintSheet) stehen die Einwilligungen
+// in einem eigenen, hervorgehobenen Block — dann hier ausblenden, sonst
+// tauchen sie doppelt auf.
+const ProfileDetail = ({ s, hideConsents = false }) => {
   const befristet = s.vertragsform === 'befristet_vz' || s.vertragsform === 'befristet_tz';
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 18, fontSize: 13 }}>
+    <div className="detailSections" style={{ display: 'flex', flexDirection: 'column', gap: 18, fontSize: 13 }}>
       <div>
         <p style={subLabel}>Rolle & Kontakt</p>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 24px' }}>
@@ -1153,7 +1169,7 @@ const ProfileDetail = ({ s }) => {
           <DetailRow label="Geburtsname" value={s.geburtsname || '–'} />
           <DetailRow label="Geschlecht" value={lbl('geschlecht', s.geschlecht)} />
           <DetailRow label="Adresse" value={`${s.strasse || '–'}, ${s.plz || ''} ${s.ort || ''}`} />
-          <DetailRow label="Geburtsdatum" value={s.geburtsdatum || '–'} />
+          <DetailRow label="Geburtsdatum" value={deDate(s.geburtsdatum)} />
           <DetailRow label="Geburtsort / -land" value={`${s.geburtsort || '–'} / ${s.geburtsland || '–'}`} />
           <DetailRow label="Staatsangehörigkeit" value={s.staatsangehoerigkeit || '–'} />
           <DetailRow label="Steuer-ID / Klasse" value={`${s.steuerId || '–'} / ${s.steuerklasse || '–'}`} />
@@ -1170,21 +1186,21 @@ const ProfileDetail = ({ s }) => {
       {(s.kinder || []).length > 0 && (
         <div>
           <p style={subLabel}>Kinder mit nachweisbarer Elterneigenschaft</p>
-          {s.kinder.map((k, i) => <div key={i} style={{ marginBottom: 2 }}>{[k.vorname, k.name].filter(Boolean).join(' ') || '–'}{k.geburtsdatum ? ` · geb. ${k.geburtsdatum}` : ''}</div>)}
+          {s.kinder.map((k, i) => <div key={i} style={{ marginBottom: 2 }}>{[k.vorname, k.name].filter(Boolean).join(' ') || '–'}{k.geburtsdatum ? ` · geb. ${deDate(k.geburtsdatum)}` : ''}</div>)}
         </div>
       )}
 
       <div>
         <p style={subLabel}>Beschäftigung</p>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 24px' }}>
-          <DetailRow label="Ersteintrittsdatum" value={s.ersteintrittsdatum || '–'} />
+          <DetailRow label="Ersteintrittsdatum" value={deDate(s.ersteintrittsdatum)} />
           <DetailRow label="Ausgeübte Tätigkeit" value={s.taetigkeit || '–'} />
           <DetailRow label="Haupt-/Nebenbeschäftigung" value={lbl('beschaeftigungsart', s.beschaeftigungsart)} />
           <DetailRow label="Geringfügig (Minijob)" value={s.geringfuegig || '–'} />
           <DetailRow label="Weitere Beschäftigung anderswo" value={s.nebentaetigkeit || '–'} />
           <DetailRow label="Vertragsform" value={lbl('vertragsform', s.vertragsform)} />
           <DetailRow label="Urlaubsanspruch" value={s.urlaubsanspruch ? s.urlaubsanspruch + ' Tage/Jahr' : '–'} />
-          {befristet && <DetailRow label="Befristet bis / Vertrag vom" value={`${s.befristetBis || '–'} / ${s.befristetAbschluss || '–'}`} />}
+          {befristet && <DetailRow label="Befristet bis / Vertrag vom" value={`${deDate(s.befristetBis)} / ${deDate(s.befristetAbschluss)}`} />}
         </div>
         <div style={{ marginTop: 8 }}>
           <span style={{ color: T.faint, display: 'block', marginBottom: 4 }}>Arbeitszeiten (Mo–Fr):</span>
@@ -1225,7 +1241,7 @@ const ProfileDetail = ({ s }) => {
             <DetailRow label="Empfänger" value={s.vwlEmpfaenger || '–'} />
             <DetailRow label="Vertragsnummer" value={s.vwlVertragsnr || '–'} />
             <DetailRow label="Betrag / AG-Anteil" value={`${s.vwlBetrag || '–'} € / ${s.vwlAgAnteil || '–'} €`} />
-            <DetailRow label="Seit" value={s.vwlSeit || '–'} />
+            <DetailRow label="Seit" value={deDate(s.vwlSeit)} />
             <DetailRow label="IBAN / BIC (VWL)" value={`${s.vwlIban || '–'} / ${s.vwlBic || '–'}`} />
           </div>
         </div>
@@ -1234,7 +1250,7 @@ const ProfileDetail = ({ s }) => {
       {(s.vorbeschaeftigungen || []).length > 0 && (
         <div>
           <p style={subLabel}>Vorbeschäftigungszeiten im laufenden Kalenderjahr</p>
-          {s.vorbeschaeftigungen.map((v, i) => <div key={i} style={{ marginBottom: 2 }}>{v.von || '–'} bis {v.bis || '–'} · {v.art || '–'}{v.tage ? ` · ${v.tage} Tage` : ''}</div>)}
+          {s.vorbeschaeftigungen.map((v, i) => <div key={i} style={{ marginBottom: 2 }}>{deDate(v.von)} bis {deDate(v.bis)} · {v.art || '–'}{v.tage ? ` · ${v.tage} Tage` : ''}</div>)}
         </div>
       )}
 
@@ -1252,13 +1268,91 @@ const ProfileDetail = ({ s }) => {
         </div>
       )}
 
-      <div>
-        <span style={{ color: T.faint }}>Datenschutzhinweis bestätigt: </span>
-        {s.dsgvoBestaetigt ? <span style={{ color: T.greenSoft }}>✓ ja{s.dsgvoDatum ? ` (${s.dsgvoDatum})` : ''}</span> : <span style={{ color: T.mauve }}>noch nicht</span>}
+      {!hideConsents && (
+        <>
+          <div>
+            <span style={{ color: T.faint }}>Datenschutzhinweis bestätigt: </span>
+            {s.dsgvoBestaetigt ? <span style={{ color: T.greenSoft }}>✓ ja{s.dsgvoDatum ? ` (${s.dsgvoDatum})` : ''}</span> : <span style={{ color: T.mauve }}>noch nicht</span>}
+          </div>
+          <div>
+            <span style={{ color: T.faint }}>Erklärung bestätigt: </span>
+            {s.erklaerungBestaetigt ? <span style={{ color: T.greenSoft }}>✓ ja{s.erklaerungDatum ? ` (${s.erklaerungDatum})` : ''}</span> : <span style={{ color: T.mauve }}>noch nicht</span>}
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
+// Druck-/PDF-Ansicht pro Mitarbeiter (Wunsch vom 12.08.2026): ein sauberes
+// Datenblatt mit ALLEN erfassten Angaben, den erteilten Einwilligungen inkl.
+// Datumsstempel und den hochgeladenen Dokumenten (als anklickbare Links).
+// Gedacht zur Weitergabe an das Steuerbüro. Erzeugt kein PDF selbst, sondern
+// nutzt den Browser-Druckdialog ("Als PDF speichern") — dafür schaltet die
+// @media-print-Regel die Bedienleiste aus und setzt A4-Ränder. Logo:
+// standort-neutrale Version "Physio Pro" (ohne Ortszusatz) aus Olivers
+// Originaldatei, als Vektor-SVG (public/logo-neutral.svg) — druckt scharf.
+const PrintSheet = ({ emp, s, onClose }) => {
+  const firma = firmaOf(emp);
+  const heute = new Date().toLocaleDateString('de-DE', { day: '2-digit', month: 'long', year: 'numeric' });
+  const consent = (ok, datum) => ok
+    ? <span style={{ color: '#1f6b3a', fontWeight: 600 }}>Ja{datum ? ` (bestätigt am ${datum})` : ''}</span>
+    : <span style={{ color: '#b23b3b', fontWeight: 600 }}>nein</span>;
+  return (
+    <div style={{ minHeight: '100vh', background: '#f3f1ec', fontFamily: 'system-ui,-apple-system,sans-serif' }}>
+      <style>{`
+        @media print {
+          .noprint { display: none !important; }
+          html, body { background: #fff !important; }
+          .printSheet { box-shadow: none !important; margin: 0 !important; border-radius: 0 !important; max-width: none !important; }
+          @page { margin: 16mm; size: A4; }
+          a { color: #000 !important; text-decoration: underline; }
+          /* Abschnitte nicht mitten durch den Seitenumbruch trennen */
+          .detailSections > div, .consentBlock { break-inside: avoid; page-break-inside: avoid; }
+        }
+        .printSheet a { color: ${T.green}; word-break: break-all; }
+      `}</style>
+
+      <div className="noprint" style={{ position: 'sticky', top: 0, zIndex: 5, background: T.ink, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 18px', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 13 }}>Datenblatt für <strong>{emp.name}</strong> — mit „Als PDF speichern" im Druckdialog als PDF sichern.</span>
+        <span style={{ display: 'flex', gap: 8 }}>
+          <button onClick={() => window.print()} style={{ background: T.green, border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer' }}>Drucken / Als PDF speichern</button>
+          <button onClick={onClose} style={{ background: 'none', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 8, padding: '8px 14px', fontSize: 13, color: '#fff', cursor: 'pointer' }}>Schließen</button>
+        </span>
       </div>
-      <div>
-        <span style={{ color: T.faint }}>Erklärung bestätigt: </span>
-        {s.erklaerungBestaetigt ? <span style={{ color: T.greenSoft }}>✓ ja{s.erklaerungDatum ? ` (${s.erklaerungDatum})` : ''}</span> : <span style={{ color: T.mauve }}>noch nicht</span>}
+
+      <div className="printSheet" style={{ maxWidth: 820, margin: '20px auto', background: '#fff', padding: '32px 40px 40px', boxShadow: '0 1px 4px rgba(0,0,0,0.12)', borderRadius: 8, color: '#1c1a17' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 20, borderBottom: '2px solid ' + T.green, paddingBottom: 16, marginBottom: 20, flexWrap: 'wrap' }}>
+          <div>
+            <p style={{ margin: 0, fontSize: 18, fontWeight: 700, color: T.ink }}>Personalbogen</p>
+            <p style={{ margin: '2px 0 0', fontSize: 13, color: T.muted }}>{firma.fullLabel} · Onboarding-Daten</p>
+          </div>
+          <img src="/logo-neutral.svg" alt="Physio Pro" style={{ height: 74, width: 'auto' }} />
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 24px', fontSize: 13, marginBottom: 22 }}>
+          <div><span style={{ color: T.faint }}>Name: </span><strong>{emp.name}</strong></div>
+          <div><span style={{ color: T.faint }}>Firma / Standort: </span>{firma.fullLabel}</div>
+          <div><span style={{ color: T.faint }}>Status: </span>{s?.submitted ? `übermittelt am ${s.submittedAt || '–'}` : (isProfileComplete(s) ? 'vollständig' : s ? 'teilweise ausgefüllt' : 'keine Daten')}</div>
+          <div><span style={{ color: T.faint }}>Ausdruck erstellt: </span>{heute}</div>
+        </div>
+
+        {!s
+          ? <Empty text="Diese Person hat noch keine Daten erfasst." />
+          : (
+            <>
+              <ProfileDetail s={s} hideConsents />
+              <div className="consentBlock" style={{ marginTop: 22, paddingTop: 16, borderTop: '1px solid ' + T.lineSoft }}>
+                <p style={subLabel}>Erteilte Einwilligungen</p>
+                <div style={{ fontSize: 13, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div><span style={{ color: T.faint }}>Datenschutzhinweis (Art. 13 DSGVO) zur Kenntnis genommen: </span>{consent(s.dsgvoBestaetigt, s.dsgvoDatum)}</div>
+                  <div><span style={{ color: T.faint }}>Richtigkeit der Angaben bestätigt (Erklärung): </span>{consent(s.erklaerungBestaetigt, s.erklaerungDatum)}</div>
+                  <div><span style={{ color: T.faint }}>Einverständnis zur Kontaktaufnahme per E-Mail: </span>{s.email ? consent(s.emailConsent) : <span style={{ color: T.faint }}>keine E-Mail angegeben</span>}</div>
+                </div>
+              </div>
+              <p style={{ fontSize: 10.5, color: T.faint, marginTop: 24, lineHeight: 1.5 }}>Selbstauskunft der/des Mitarbeitenden aus dem Onboarding-Portal. Hochgeladene Dokumente (Arbeitsvertrag, Qualifikationen/Urkunden) sind oben als Links hinterlegt und separat abrufbar. Erstellt am {heute}.</p>
+            </>
+          )}
       </div>
     </div>
   );
@@ -1389,7 +1483,7 @@ const AdminTeamAdd = ({ onAdd }) => {
   );
 };
 
-const Admin = ({ user, employees, profiles, onResetPin, onAddEmployee, onDelEmployee, onPreviewEmployee, onLogout }) => {
+const Admin = ({ user, employees, profiles, onResetPin, onAddEmployee, onDelEmployee, onPreviewEmployee, onPrintEmployee, onLogout }) => {
   const [openId, setOpenId] = useState(null);
   const byId = id => profiles.find(s => s.id === id) || null;
   const rows = employees.map(e => ({ emp: e, s: byId(e.id), complete: isProfileComplete(byId(e.id)) }));
@@ -1420,6 +1514,7 @@ const Admin = ({ user, employees, profiles, onResetPin, onAddEmployee, onDelEmpl
                 <span style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                   {emp.inviteToken && <button onClick={() => copyText(inviteMessage(emp), 'Einladungstext kopiert — jetzt einfügen und an die Person schicken.')} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '5px 10px', fontSize: 12, color: T.muted, cursor: 'pointer' }} title="Fertigen Einladungstext mit persönlichem Link erneut kopieren">Einladung</button>}
                   <button onClick={() => onPreviewEmployee(emp.id)} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '5px 10px', fontSize: 12, color: T.muted, cursor: 'pointer' }} title="Zeigt die Formular-Ansicht dieser Person read-only an">Vorschau</button>
+                  {s && <button onClick={() => onPrintEmployee(emp.id)} style={{ background: 'none', border: '1px solid ' + T.green, borderRadius: 7, padding: '5px 10px', fontSize: 12, color: T.green, cursor: 'pointer' }} title="Datenblatt zum Ausdrucken / als PDF speichern (fürs Steuerbüro)">PDF</button>}
                   {emp.pinSet && <button onClick={() => { if (confirm('PIN für ' + emp.name + ' zurücksetzen?')) onResetPin(emp.id); }} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '5px 10px', fontSize: 12, color: T.muted, cursor: 'pointer' }}>PIN Reset</button>}
                   <button onClick={() => { if (confirm(emp.name + ' endgültig entfernen? Der Zugang wird sofort gesperrt.')) onDelEmployee(emp.id); }} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '5px 10px', fontSize: 12, color: '#c0392b', cursor: 'pointer' }}>Löschen</button>
                 </span>
