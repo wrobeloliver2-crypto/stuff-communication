@@ -1503,8 +1503,30 @@ const copyText = async (text, doneMsg = 'Kopiert — jetzt einfügen und an die 
 
 const intranetLink = () => `${window.location.origin}${window.location.pathname}`;
 
-const inviteMessage = (emp) => {
+// mode: 'invite'  = Einladung/Willkommen (Standard, auch nach dem Anlegen)
+//       'reset'   = PIN wurde zurückgesetzt (Wunsch Oliver, 14.08.2026)
+const inviteMessage = (emp, mode = 'invite') => {
   const vorname = (emp.name || '').trim().split(/\s+/)[0] || '';
+  const wahl = `unter „Mitarbeiter" deinen Namen auswählen (${emp.name})`;
+
+  if (mode === 'reset') {
+    return [
+      `Hallo ${vorname},`,
+      '',
+      'deine PIN für das STUFF Intranet wurde zurückgesetzt — die alte gilt nicht mehr.',
+      '',
+      'Hier geht es zum Intranet:',
+      intranetLink(),
+      '',
+      `So geht's: Seite öffnen, ${wahl} und eine neue PIN festlegen (4–6 Ziffern). Die PIN kennst nur du — danach meldest du dich wieder wie gewohnt damit an.`,
+      '',
+      'Bei Fragen melde dich einfach.',
+      '',
+      'Liebe Grüße',
+      'Hanna',
+    ].join('\n');
+  }
+
   return [
     `Hallo ${vorname},`,
     '',
@@ -1514,8 +1536,8 @@ const inviteMessage = (emp) => {
     intranetLink(),
     '',
     emp.pinSet
-      ? `So geht's: Seite öffnen, unter „Mitarbeiter" deinen Namen auswählen (${emp.name}) und mit deiner PIN anmelden.`
-      : `So geht's: Seite öffnen, unter „Mitarbeiter" deinen Namen auswählen (${emp.name}) und beim ersten Mal eine eigene PIN festlegen (4–6 Ziffern). Die PIN kennst nur du — danach meldest du dich immer damit an.`,
+      ? `So geht's: Seite öffnen, ${wahl} und mit deiner PIN anmelden.`
+      : `So geht's: Seite öffnen, ${wahl} und beim ersten Mal eine eigene PIN festlegen (4–6 Ziffern). Die PIN kennst nur du — danach meldest du dich immer damit an.`,
     '',
     'Tipp: Leg dir die Seite am Handy auf den Startbildschirm, dann hast du sie immer griffbereit.',
     '',
@@ -1526,16 +1548,20 @@ const inviteMessage = (emp) => {
   ].join('\n');
 };
 
-const InvitePanel = ({ emp, onClose }) => {
-  const text = inviteMessage(emp);
+const InvitePanel = ({ emp, onClose, justCreated = false, mode = 'invite' }) => {
+  const text = inviteMessage(emp, mode);
   return (
     <div style={{ border: '1px solid ' + T.line, borderRadius: 10, padding: '1rem', marginBottom: '1.2rem', background: T.chip }}>
       <p style={{ fontSize: 13, color: T.ink, margin: '0 0 10px' }}>
-        Zugang für <strong>{emp.name}</strong> angelegt. Hier ist die fertige Einladung — einfach kopieren und verschicken (z. B. per WhatsApp oder E-Mail):
+        {mode === 'reset'
+          ? <>PIN von <strong>{emp.name}</strong> zurückgesetzt. Hier ist der fertige Hinweistext — einfach kopieren und verschicken (z. B. per WhatsApp oder E-Mail):</>
+          : justCreated
+            ? <>Zugang für <strong>{emp.name}</strong> angelegt. Hier ist die fertige Einladung — einfach kopieren und verschicken (z. B. per WhatsApp oder E-Mail):</>
+            : <>Einladung für <strong>{emp.name}</strong> — einfach kopieren und verschicken (z. B. per WhatsApp oder E-Mail):</>}
       </p>
       <pre style={{ fontSize: 12.5, fontFamily: 'inherit', background: T.surface, border: '1px solid ' + T.line, borderRadius: 8, padding: '12px 14px', whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: '0 0 10px', color: T.ink, lineHeight: 1.6 }}>{text}</pre>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <button onClick={() => copyText(text, 'Einladungstext kopiert — jetzt einfügen und an ' + ((emp.name || '').trim().split(/\s+/)[0] || 'die Person') + ' schicken.')} style={primaryBtn}>Text kopieren</button>
+        <button onClick={() => copyText(text, 'Text kopiert — jetzt einfügen und an ' + ((emp.name || '').trim().split(/\s+/)[0] || 'die Person') + ' schicken.')} style={primaryBtn}>Text kopieren</button>
         <button onClick={() => copyText(intranetLink(), 'Link kopiert.')} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 8, padding: '10px 16px', fontSize: 13, color: T.muted, cursor: 'pointer' }}>Nur den Link kopieren</button>
         <button onClick={onClose} style={{ background: 'none', border: 'none', color: T.faint, fontSize: 12, cursor: 'pointer', padding: '10px 4px' }}>Schließen</button>
       </div>
@@ -1567,7 +1593,7 @@ const AdminTeamAdd = ({ onAdd }) => {
     }
   };
 
-  if (created) return <InvitePanel emp={created} onClose={() => setCreated(null)} />;
+  if (created) return <InvitePanel emp={created} justCreated onClose={() => setCreated(null)} />;
 
   if (!open) return (
     <button onClick={() => setOpen(true)} style={{ ...primaryBtn, marginBottom: '1.2rem' }}>+ Mitarbeiter hinzufügen</button>
@@ -1595,28 +1621,46 @@ const AdminTeamAdd = ({ onAdd }) => {
 
 const AdminTeam = ({ employees, onResetPin, onAddEmployee, onDelEmployee, onPreviewEmployee }) => {
   // Einladung erneut anzeigen/kopieren: merkt sich, für welche Person das
-  // Textfeld gerade aufgeklappt ist (null = keine).
+  // Textfeld gerade aufgeklappt ist (null = keine) und in welcher Variante
+  // ('invite' = Einladung, 'reset' = Hinweis nach PIN-Reset).
   const [inviteFor, setInviteFor] = useState(null);
-  const inviteEmp = employees.find(e => e.id === inviteFor) || null;
+  const [inviteMode, setInviteMode] = useState('invite');
+  const openInvite = (id, mode) => {
+    if (inviteFor === id && inviteMode === mode) { setInviteFor(null); return; }
+    setInviteMode(mode); setInviteFor(id);
+  };
   return (
   <div style={cardS}>
     <Label>Mitarbeiter ({employees.length})</Label>
     <AdminTeamAdd onAdd={onAddEmployee} />
-    {inviteEmp && <InvitePanel emp={inviteEmp} onClose={() => setInviteFor(null)} />}
     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,1.5fr) minmax(0,1fr) auto', fontSize: 11, color: T.faint, letterSpacing: '0.08em', textTransform: 'uppercase', padding: '0 0 8px', borderBottom: '1px solid ' + T.lineSoft }}>
       <span>Name</span><span>Rolle</span><span>PIN</span><span></span>
     </div>
     {employees.map(e => (
-      <div key={e.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,1.5fr) minmax(0,1fr) auto', alignItems: 'center', padding: '11px 0', borderBottom: '1px solid ' + T.lineSoft, fontSize: 13, color: T.ink }}>
+      <React.Fragment key={e.id}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,1.5fr) minmax(0,1fr) auto', alignItems: 'center', padding: '11px 0', borderBottom: '1px solid ' + T.lineSoft, fontSize: 13, color: T.ink }}>
         <span>{e.name}</span><span style={{ color: T.muted }}>{e.role}</span>
         <span style={{ color: e.pinSet ? T.greenSoft : T.faint }}>{e.pinSet ? 'gesetzt' : '–'}</span>
         <span style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-          <button onClick={() => setInviteFor(inviteFor === e.id ? null : e.id)} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '5px 10px', fontSize: 12, color: T.muted, cursor: 'pointer' }} title="Fertigen Einladungstext mit Link anzeigen und kopieren">Einladung</button>
+          <button onClick={() => openInvite(e.id, 'invite')} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '5px 10px', fontSize: 12, color: T.muted, cursor: 'pointer' }} title="Fertigen Einladungstext mit Link anzeigen und kopieren">Einladung</button>
           {onPreviewEmployee && <button onClick={() => onPreviewEmployee(e.id)} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '5px 10px', fontSize: 12, color: T.muted, cursor: 'pointer' }} title="Zeigt die Mitarbeiter-Oberfläche dieser Person read-only an">Vorschau</button>}
-          {e.pinSet && <button onClick={() => { if (confirm('PIN für ' + e.name + ' zurücksetzen?')) onResetPin(e.id); }} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '5px 10px', fontSize: 12, color: T.muted, cursor: 'pointer' }}>Reset</button>}
+          {/* Nach dem Zurücksetzen klappt direkt der passende Hinweistext auf
+              (Wunsch Oliver, 14.08.2026) — die Person muss ja wissen, dass sie
+              sich eine neue PIN vergeben soll. */}
+          {e.pinSet && <button onClick={async () => { if (confirm('PIN für ' + e.name + ' zurücksetzen?')) { await onResetPin(e.id); openInvite(e.id, 'reset'); } }} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '5px 10px', fontSize: 12, color: T.muted, cursor: 'pointer' }}>Reset</button>}
           <button onClick={() => { if (confirm(e.name + ' endgültig aus dem Team entfernen? Der Zugang wird sofort gesperrt.')) onDelEmployee(e.id); }} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '5px 10px', fontSize: 12, color: '#c0392b', cursor: 'pointer' }}>Löschen</button>
         </span>
       </div>
+      {/* Der Einladungstext klappt direkt UNTER der jeweiligen Zeile auf.
+          (Vorher stand er oben über der Liste — bei 30 Einträgen war er
+          außerhalb des sichtbaren Bereichs und es sah aus, als passiere
+          beim Klick nichts. Rückmeldung Oliver, 14.08.2026.) */}
+      {inviteFor === e.id && (
+        <div style={{ padding: '12px 0' }}>
+          <InvitePanel emp={e} mode={inviteMode} onClose={() => setInviteFor(null)} />
+        </div>
+      )}
+      </React.Fragment>
     ))}
   </div>
   );
