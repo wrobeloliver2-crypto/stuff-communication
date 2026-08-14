@@ -624,10 +624,13 @@ const backfillMissingIds = (items) => {
   // um Kollisionen mit den bestehenden Slug-ids wie 'oliver'/'hanna' sicher
   // auszuschließen) sowie pin: null / pinSet: false — sie legen ihre PIN wie
   // alle anderen beim ersten Login selbst fest (siehe pinSetup).
+  // Gibt den angelegten Datensatz zurück, damit die Verwaltungsansicht direkt
+  // den fertigen Einladungstext dazu anzeigen kann (siehe InvitePanel).
   const addEmployee = async ({ name, role, company }) => {
     const entry = { id: 'emp' + Date.now(), name, role, company, pin: null, pinSet: false };
     await commit(setEmployees, 'employees', prev => [...prev, entry]);
     await logA('Mitarbeiter angelegt', user.name, name + ' (' + role + ', ' + company + ')');
+    return entry;
   };
 
   // Hard-Delete (filter statt Soft-Delete): anders als bei News verkürzt das
@@ -1485,12 +1488,68 @@ const AdminMessageThread = ({ m, employees, onReply, onCloseDialog, onReopenDial
 
 const COMPANIES = ['PhysioPro', 'Pilates', 'Beide'];
 
+// ---------------------------------------------------------------------------
+// Einladungstext (Wunsch vom 14.08.2026)
+// Analog zum Bad-Schwartau-Onboarding: Nach dem Anlegen einer Person erscheint
+// direkt ein fertiger Einladungstext mit Link zum Kopieren (WhatsApp/E-Mail).
+// Anders als dort gibt es hier KEINEN persönlichen Einladungs-Token — der
+// Intranet-Login läuft über Namensauswahl + selbst gesetzte PIN, der Link ist
+// deshalb für alle derselbe (die Startseite).
+// ---------------------------------------------------------------------------
+const copyText = async (text, doneMsg = 'Kopiert — jetzt einfügen und an die Person schicken.') => {
+  try { await navigator.clipboard.writeText(text); alert(doneMsg); }
+  catch (e) { prompt('Kopieren nicht möglich — bitte den Text manuell markieren:', text); }
+};
+
+const intranetLink = () => `${window.location.origin}${window.location.pathname}`;
+
+const inviteMessage = (emp) => {
+  const vorname = (emp.name || '').trim().split(/\s+/)[0] || '';
+  return [
+    `Hallo ${vorname},`,
+    '',
+    'herzlich willkommen im STUFF Intranet von PhysioPro & Pilates Company — unserem internen Bereich für News, Tools und persönliche Nachrichten von der Verwaltung.',
+    '',
+    'Dein Zugang:',
+    intranetLink(),
+    '',
+    emp.pinSet
+      ? `So geht's: Seite öffnen, unter „Mitarbeiter" deinen Namen auswählen (${emp.name}) und mit deiner PIN anmelden.`
+      : `So geht's: Seite öffnen, unter „Mitarbeiter" deinen Namen auswählen (${emp.name}) und beim ersten Mal eine eigene PIN festlegen (4–6 Ziffern). Die PIN kennst nur du — danach meldest du dich immer damit an.`,
+    '',
+    'Tipp: Leg dir die Seite am Handy auf den Startbildschirm, dann hast du sie immer griffbereit.',
+    '',
+    'Bei Fragen melde dich einfach.',
+    '',
+    'Liebe Grüße',
+    'Hanna',
+  ].join('\n');
+};
+
+const InvitePanel = ({ emp, onClose }) => {
+  const text = inviteMessage(emp);
+  return (
+    <div style={{ border: '1px solid ' + T.line, borderRadius: 10, padding: '1rem', marginBottom: '1.2rem', background: T.chip }}>
+      <p style={{ fontSize: 13, color: T.ink, margin: '0 0 10px' }}>
+        Zugang für <strong>{emp.name}</strong> angelegt. Hier ist die fertige Einladung — einfach kopieren und verschicken (z. B. per WhatsApp oder E-Mail):
+      </p>
+      <pre style={{ fontSize: 12.5, fontFamily: 'inherit', background: T.surface, border: '1px solid ' + T.line, borderRadius: 8, padding: '12px 14px', whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: '0 0 10px', color: T.ink, lineHeight: 1.6 }}>{text}</pre>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <button onClick={() => copyText(text, 'Einladungstext kopiert — jetzt einfügen und an ' + ((emp.name || '').trim().split(/\s+/)[0] || 'die Person') + ' schicken.')} style={primaryBtn}>Text kopieren</button>
+        <button onClick={() => copyText(intranetLink(), 'Link kopiert.')} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 8, padding: '10px 16px', fontSize: 13, color: T.muted, cursor: 'pointer' }}>Nur den Link kopieren</button>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', color: T.faint, fontSize: 12, cursor: 'pointer', padding: '10px 4px' }}>Schließen</button>
+      </div>
+    </div>
+  );
+};
+
 const AdminTeamAdd = ({ onAdd }) => {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [role, setRole] = useState(GROUPS[0]);
   const [company, setCompany] = useState(COMPANIES[0]);
   const [saving, setSaving] = useState(false);
+  const [created, setCreated] = useState(null);
 
   const reset = () => { setName(''); setRole(GROUPS[0]); setCompany(COMPANIES[0]); };
 
@@ -1498,13 +1557,17 @@ const AdminTeamAdd = ({ onAdd }) => {
     if (!name.trim()) return;
     setSaving(true);
     try {
-      await onAdd({ name: name.trim(), role, company });
+      const record = { name: name.trim(), role, company, pinSet: false };
+      const entry = await onAdd(record);
+      setCreated({ ...record, ...(entry || {}) });
       reset();
       setOpen(false);
     } finally {
       setSaving(false);
     }
   };
+
+  if (created) return <InvitePanel emp={created} onClose={() => setCreated(null)} />;
 
   if (!open) return (
     <button onClick={() => setOpen(true)} style={{ ...primaryBtn, marginBottom: '1.2rem' }}>+ Mitarbeiter hinzufügen</button>
@@ -1530,10 +1593,16 @@ const AdminTeamAdd = ({ onAdd }) => {
   );
 };
 
-const AdminTeam = ({ employees, onResetPin, onAddEmployee, onDelEmployee, onPreviewEmployee }) => (
+const AdminTeam = ({ employees, onResetPin, onAddEmployee, onDelEmployee, onPreviewEmployee }) => {
+  // Einladung erneut anzeigen/kopieren: merkt sich, für welche Person das
+  // Textfeld gerade aufgeklappt ist (null = keine).
+  const [inviteFor, setInviteFor] = useState(null);
+  const inviteEmp = employees.find(e => e.id === inviteFor) || null;
+  return (
   <div style={cardS}>
     <Label>Mitarbeiter ({employees.length})</Label>
     <AdminTeamAdd onAdd={onAddEmployee} />
+    {inviteEmp && <InvitePanel emp={inviteEmp} onClose={() => setInviteFor(null)} />}
     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,1.5fr) minmax(0,1fr) auto', fontSize: 11, color: T.faint, letterSpacing: '0.08em', textTransform: 'uppercase', padding: '0 0 8px', borderBottom: '1px solid ' + T.lineSoft }}>
       <span>Name</span><span>Rolle</span><span>PIN</span><span></span>
     </div>
@@ -1542,6 +1611,7 @@ const AdminTeam = ({ employees, onResetPin, onAddEmployee, onDelEmployee, onPrev
         <span>{e.name}</span><span style={{ color: T.muted }}>{e.role}</span>
         <span style={{ color: e.pinSet ? T.greenSoft : T.faint }}>{e.pinSet ? 'gesetzt' : '–'}</span>
         <span style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+          <button onClick={() => setInviteFor(inviteFor === e.id ? null : e.id)} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '5px 10px', fontSize: 12, color: T.muted, cursor: 'pointer' }} title="Fertigen Einladungstext mit Link anzeigen und kopieren">Einladung</button>
           {onPreviewEmployee && <button onClick={() => onPreviewEmployee(e.id)} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '5px 10px', fontSize: 12, color: T.muted, cursor: 'pointer' }} title="Zeigt die Mitarbeiter-Oberfläche dieser Person read-only an">Vorschau</button>}
           {e.pinSet && <button onClick={() => { if (confirm('PIN für ' + e.name + ' zurücksetzen?')) onResetPin(e.id); }} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '5px 10px', fontSize: 12, color: T.muted, cursor: 'pointer' }}>Reset</button>}
           <button onClick={() => { if (confirm(e.name + ' endgültig aus dem Team entfernen? Der Zugang wird sofort gesperrt.')) onDelEmployee(e.id); }} style={{ background: 'none', border: '1px solid ' + T.line, borderRadius: 7, padding: '5px 10px', fontSize: 12, color: '#c0392b', cursor: 'pointer' }}>Löschen</button>
@@ -1549,7 +1619,8 @@ const AdminTeam = ({ employees, onResetPin, onAddEmployee, onDelEmployee, onPrev
       </div>
     ))}
   </div>
-);
+  );
+};
 
 const AdminAudit = ({ audit }) => (
   <div style={cardS}>
