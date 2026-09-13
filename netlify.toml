@@ -7,14 +7,3 @@
   from = "/*"
   to = "/index.html"
   status = 200
-
-[env]
-  [env.production]
-    VITE_GOOGLE_SHEETS_ID = ""
-    VITE_GOOGLE_SHEETS_API_KEY = ""
-    VITE_WHATSAPP_TOKEN = ""
-
-[context.production.environment]
-  VITE_GOOGLE_SHEETS_ID = ""
-  VITE_GOOGLE_SHEETS_API_KEY = ""
-  VITE_WHATSAPP_TOKEN = ""

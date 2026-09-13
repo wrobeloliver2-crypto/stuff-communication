@@ -1,31 +1,23 @@
-# 🏥 💚 🎀 STUFF Intranet
+# STUFF Intranet
 
-Central Employee Portal for PhysioPro Lübeck + Pilates Company
+Interner Bereich für PhysioPro Lübeck & Pilates Company: Firmen-News, Tools & Links und der persönliche Bereich (Dialoge mit der Verwaltung).
 
-## Features
+Seit v3.0 (September 2026) kommen **alle Daten aus dem zentralen Mitarbeiter-Dienst** (`wrobeloliver2-crypto/mitarbeiter-api`, Neon-Datenbank `mitarbeiter`):
 
-### 👤 Employee Area
-- **PIN-Login** (single PIN for everything)
-- **Dashboard Widgets** (News + Postfach, drag-to-rearrange)
-- **News Feed** with categories (Ankündigungen | Events | Info | Schichten)
-- **Personal Mailbox** (individual + group messages)
-- **Mobile-first** with Bottom Navigation
-- **Read Status Tracking** (Admin only)
+- Login: Name + PIN – dieselbe PIN wie in der Zeiterfassung (zentrale Tabelle `zeit_pin`)
+- News: Tabelle `nachrichten` (mit Lesebestätigung `nachrichten_gelesen`)
+- Persönlicher Bereich: Tabellen `dialoge` / `dialog_beitraege` / `dialog_anhaenge` – dieselben Dialoge erscheinen in der Zeiterfassung
+- Tools & Links: Tabelle `apps` (Kacheln = `im_intranet`)
+- Mitarbeiterliste und Protokoll: aus der Datenbank
 
-### ⚙️ Admin Area
-- **Email + Password Login** (Oliver & Hanna)
-- **News Management** (create, categorize, delete, archive by month)
-- **Message Broadcasting** (to groups or individuals)
-- **Employee Management** (PIN reset, overview)
-- **Audit Log** (complete tracking)
+Google Sheets wird **nicht mehr** verwendet. Einzige eigene Function ist `netlify/functions/upload.js` (Datei-Upload nach Google Cloud Storage, Bucket `stuff-intranet-files`); die Dateien werden als Anhänge in der Datenbank referenziert.
 
-## Tech Stack
-- React 18
-- Vite
-- localStorage (soon: Google Sheets)
-- Netlify
+## Entwicklung
 
-## Repo & Live
-- **GitHub:** https://github.com/wrobeloliver2-crypto/stuff-communication
-- **Live:** https://stuff-communication.netlify.app
+```bash
+npm install
+npm run dev      # lokal
+npm run build    # Produktion (Netlify baut automatisch aus main)
+```
 
+Der Mitarbeiter-Client wird in `index.html` von `https://mitarbeiter-api.netlify.app/mitarbeiter-client.js` geladen; die Domain dieser Seite muss dort in `ALLOWED_ORIGINS` stehen.
