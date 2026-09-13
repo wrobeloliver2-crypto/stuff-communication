@@ -21,7 +21,7 @@ const FIRMS = {
 };
 const firmKey = (firmaId) => firmaId === 1 ? 'physio' : firmaId === 2 ? 'pilates' : 'beide';
 
-// ── Zentraler Mitarbeiter-Dienst ────────────────────────────────────────────
+// ── Zentraler Mitarbeiter-Dienst ────────────────────────────────────────────────────────────
 // Der Client hält den Token in sessionStorage; damit man am Handy nicht nach
 // jedem Schließen neu tippen muss, spiegeln wir ihn zusätzlich in localStorage.
 const TOKEN_KEY = 'ma_token_intranet';
@@ -75,7 +75,7 @@ const fmtDateTime = (ms) => ms ? new Date(ms).toLocaleString('de-DE', { day: '2-
 const fmtTermin = (v) => { if (!v) return ''; const d = new Date(v); return isNaN(d) ? String(v) : d.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' }); };
 const isoDate = (v) => { if (!v) return ''; const d = new Date(v); return isNaN(d) ? '' : d.toISOString().slice(0, 10); };
 
-// ── App ────────────────────────────────────────────────────────────────────────────
+// ── App ────────────────────────────────────────────────────────────
 const App = () => {
   const [phase, setPhase] = useState('loading'); // loading | login | app
   const [boot, setBoot] = useState({ firmen: [], personen: [] });
@@ -157,7 +157,7 @@ const App = () => {
     : <Employee user={user} news={news} tools={tools} dialoge={dialoge} ungelesen={ungelesen} meineFirmen={meineFirmen} onLogout={logout} onChanged={reload} />;
 };
 
-// ── Bausteine ────────────────────────────────────────────────────────────────────
+// ── Bausteine ────────────────────────────────────────────────────────────
 const LoadingScreen = ({ text = 'Daten werden geladen …' }) => (
   <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', flexDirection: 'column', fontFamily: 'system-ui,-apple-system,sans-serif' }}>
     <BrandHeader right={<span style={{ fontSize: 11, color: T.faint, letterSpacing: '0.14em' }}>INTRANET</span>} />
@@ -259,7 +259,7 @@ const ghostBtn = { background: 'none', border: '1px solid ' + T.line, borderRadi
 const subLabel = { fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: T.faint, margin: '0.5rem 0 0.6rem' };
 const chkS = { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: T.muted, marginBottom: 12, cursor: 'pointer' };
 
-// ── Login ──────────────────────────────────────────────────────────────────────────
+// ── Login ────────────────────────────────────────────────────────────
 // Eine Person kann in beiden Firmen sein (z. B. Hanna, Oliver, Katharina) –
 // für das Intranet reicht ein Eintrag pro Person; angemeldet wird über das
 // erste Arbeitsverhältnis (Admin-Rolle bevorzugt).
@@ -301,6 +301,7 @@ const Login = ({ boot, onLogin, onPinSetzen }) => {
       <BrandHeader right={<span style={{ fontSize: 11, color: T.faint, letterSpacing: '0.14em' }}>INTRANET</span>} />
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
         <div style={{ background: T.surface, border: '0.5px solid ' + T.line, borderRadius: 14, padding: '2.5rem', maxWidth: 420, width: '100%' }}>
+          <img src={ICON_BASE + 'login.svg'} alt="" width={56} height={56} style={{ width: 56, height: 56, borderRadius: 14, display: 'block', marginBottom: '1rem' }} />
           <h1 style={{ margin: '0 0 0.4rem', fontSize: 21, fontWeight: 500, color: T.ink }}>Willkommen</h1>
           <p style={{ margin: '0 0 1.5rem', fontSize: 13, color: T.muted }}>Interner Bereich für PhysioPro & Pilates Company. Anmeldung mit deiner PIN – dieselbe wie in der Zeiterfassung.</p>
           <select value={sel} onChange={e => { setSel(e.target.value); setPin(''); setNp(''); setCp(''); setMsg(''); setForceSetup(false); }} style={inp}>
@@ -329,7 +330,7 @@ const Login = ({ boot, onLogin, onPinSetzen }) => {
   );
 };
 
-// ── Mitarbeiter-Ansicht ─────────────────────────────────────────────────────────────────
+// ── Mitarbeiter-Ansicht ────────────────────────────────────────────────────────────
 const TabBar = ({ tabs, tab, setTab, tone = () => T.green }) => (
   <div style={{ background: T.surface, borderBottom: '1px solid ' + T.lineSoft }}>
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 1.5rem', display: 'flex', gap: 28, overflowX: 'auto' }}>
@@ -345,13 +346,29 @@ const TabBar = ({ tabs, tab, setTab, tone = () => T.green }) => (
 const meineApps = (tools, meineFirmen) => tools.filter(t => t.aktiv && t.imIntranet && (t.firmaId === null || meineFirmen.includes(t.firmaId)));
 const appLink = (t) => t.url ? t.url + (MA && MA.token ? '#ma=' + encodeURIComponent(MA.token) : '') : null;
 
-const AppTiles = ({ tools, compact = false }) => (
+// App-Icons (zentral im Mitarbeiter-Dienst): Zeiterfassung in Physio-Grün oder Pilates-Rosé,
+// je nach Firma der angemeldeten Person; Intranet, Login und Fahrtenbuch haben je ein Icon.
+const ICON_BASE = 'https://mitarbeiter-api.netlify.app/icons/';
+const ICON_APPS = ['zeiterfassung', 'intranet', 'login', 'fahrtenbuch'];
+const appIcon = (kuerzel, firmaId) => {
+  if (!ICON_APPS.includes(kuerzel)) return null;
+  const name = kuerzel === 'zeiterfassung' ? (firmaId === 2 ? 'zeiterfassung-pilates' : 'zeiterfassung-physio') : kuerzel;
+  return ICON_BASE + name + '.svg';
+};
+const AppIcon = ({ t, firmaId, size = 46 }) => {
+  const src = appIcon(t.kuerzel, firmaId);
+  return src
+    ? <img src={src} alt="" width={size} height={size} style={{ width: size, height: size, borderRadius: Math.round(size * 0.24), flexShrink: 0, display: 'block' }} />
+    : <div style={{ width: size, height: size, borderRadius: Math.round(size * 0.24), background: T.chip, color: T.green, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: Math.round(size * 0.35), fontWeight: 500, flexShrink: 0 }}>{t.abk || initialsOf(t.name)}</div>;
+};
+
+const AppTiles = ({ tools, compact = false, firmaId = null }) => (
   <div style={{ display: 'grid', gridTemplateColumns: compact ? 'repeat(auto-fill,minmax(220px,1fr))' : 'repeat(auto-fill,minmax(300px,1fr))', gap: 14 }}>
     {tools.map(t => {
       const inner = (
         <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 13 }}>
-            <div style={{ width: compact ? 40 : 46, height: compact ? 40 : 46, borderRadius: 11, background: T.chip, color: T.green, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 500, flexShrink: 0 }}>{t.abk || initialsOf(t.name)}</div>
+            <AppIcon t={t} firmaId={firmaId} size={compact ? 40 : 46} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <p style={{ margin: '0 0 2px', fontSize: compact ? 15 : 16, fontWeight: 500, color: T.ink }}>{t.name}</p>
               <FirmTag firm={firmKey(t.firmaId)} />
@@ -395,7 +412,7 @@ const Employee = ({ user, news, tools, dialoge, ungelesen, meineFirmen, onLogout
           <div>
             <Label>Meine Apps</Label>
             <p style={{ fontSize: 12, color: T.muted, margin: '-0.4rem 0 1.2rem', lineHeight: 1.6 }}>Du bist angemeldet – in den Apps musst du keine PIN mehr eingeben.</p>
-            {apps.length === 0 ? <Empty text="Noch keine Apps für dich freigeschaltet." /> : <AppTiles tools={apps} />}
+            {apps.length === 0 ? <Empty text="Noch keine Apps für dich freigeschaltet." /> : <AppTiles tools={apps} firmaId={user.firmaId} />}
             {(neu.length > 0 || neueNews.length > 0) && (
               <div style={{ marginTop: '2rem' }}>
                 <Label>Neu für dich</Label>
@@ -557,7 +574,7 @@ const DialogThread = ({ d, user, admin = false, onChanged }) => {
   );
 };
 
-// ── Verwaltung ──────────────────────────────────────────────────────────────────
+// ── Verwaltung ────────────────────────────────────────────────────────────
 const Admin = ({ user, news, tools, dialoge, boot, meineFirmen, onLogout, onChanged }) => {
   const [tab, setTab] = useState('start');
   const [employees, setEmployees] = useState([]);
@@ -578,7 +595,7 @@ const Admin = ({ user, news, tools, dialoge, boot, meineFirmen, onLogout, onChan
         {tab === 'start' && (
           <div>
             <Label>Meine Apps</Label>
-            <AppTiles tools={meineApps(tools, meineFirmen)} />
+            <AppTiles tools={meineApps(tools, meineFirmen)} firmaId={user.firmaId} />
             {unread > 0 && (
               <div style={{ marginTop: '2rem' }}>
                 <Label>Neue Antworten ({unread})</Label>
@@ -759,7 +776,7 @@ const AdminTools = ({ tools, onChanged }) => {
         {tools.map(t => (
           <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 0', borderBottom: '1px solid ' + T.lineSoft, gap: 8, flexWrap: 'wrap', opacity: t.aktiv ? 1 : 0.5 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{ width: 34, height: 34, borderRadius: 8, background: T.chip, color: T.green, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 500 }}>{t.abk || initialsOf(t.name)}</div>
+              <AppIcon t={t} firmaId={null} size={34} />
               <div>
                 <p style={{ margin: 0, fontSize: 14, color: T.ink }}>{t.name}{t.imIntranet && <span style={{ marginLeft: 8, fontSize: 10, color: T.green, border: '1px solid ' + T.greenSoft, borderRadius: 20, padding: '2px 7px' }}>Kachel</span>}{!t.aktiv && <span style={{ marginLeft: 8, fontSize: 10, color: T.faint, border: '1px solid ' + T.line, borderRadius: 20, padding: '2px 7px' }}>eingestellt</span>}</p>
                 <div style={{ margin: '3px 0 0', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -846,7 +863,7 @@ const AdminPost = ({ user, employees, dialoge, onChanged }) => {
   );
 };
 
-// ── Mitarbeiter (Verwaltung) ────────────────────────────────────────────────────────
+// ── Mitarbeiter (Verwaltung) ────────────────────────────────────────────────────────────
 const copyText = async (text, doneMsg = 'Kopiert — jetzt einfügen und an die Person schicken.') => {
   try { await navigator.clipboard.writeText(text); alert(doneMsg); }
   catch (e) { prompt('Kopieren nicht möglich — bitte den Text manuell markieren:', text); }
