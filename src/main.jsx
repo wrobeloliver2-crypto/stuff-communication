@@ -364,20 +364,23 @@ const AppIcon = ({ t, firmaId, size = 46 }) => {
 
 const tileBase = (compact) => ({ background: T.surface, border: '0.5px solid ' + T.line, borderRadius: 12, padding: compact ? '1rem 1.1rem' : '1.4rem', display: 'flex', flexDirection: 'column', gap: 13, minHeight: compact ? 0 : 120 });
 
-// Kachel für die Team-News (beide Firmen) – gleiche Optik wie die App-Kacheln, führt zum News-Reiter
-const NewsTile = ({ neu = 0, onClick, compact = false }) => (
+// Kacheln für die Portal-Bereiche (News, Mein Bereich) – gleiche Optik wie die App-Kacheln,
+// nur dass sie zu einem Reiter im Portal führen statt in eine App.
+const LinkTile = ({ icon, titel, text, neu = 0, onClick, compact = false }) => (
   <div onClick={onClick} role="button" style={{ ...tileBase(compact), cursor: 'pointer' }}>
     <div style={{ display: 'flex', alignItems: 'center', gap: 13 }}>
-      <img src={ICON_BASE + 'news.svg'} alt="" width={compact ? 40 : 46} height={compact ? 40 : 46} style={{ width: compact ? 40 : 46, height: compact ? 40 : 46, borderRadius: 11, flexShrink: 0, display: 'block' }} />
+      <img src={ICON_BASE + icon + '.svg'} alt="" width={compact ? 40 : 46} height={compact ? 40 : 46} style={{ width: compact ? 40 : 46, height: compact ? 40 : 46, borderRadius: 11, flexShrink: 0, display: 'block' }} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ margin: '0 0 2px', fontSize: compact ? 15 : 16, fontWeight: 500, color: T.ink }}>News{neu > 0 && <span style={{ marginLeft: 8, fontSize: 11, color: '#fff', background: T.mauve, borderRadius: 20, padding: '2px 8px', verticalAlign: 'middle' }}>{neu} neu</span>}</p>
+        <p style={{ margin: '0 0 2px', fontSize: compact ? 15 : 16, fontWeight: 500, color: T.ink }}>{titel}{neu > 0 && <span style={{ marginLeft: 8, fontSize: 11, color: '#fff', background: T.mauve, borderRadius: 20, padding: '2px 8px', verticalAlign: 'middle' }}>{neu} neu</span>}</p>
         <FirmTag firm="beide" />
       </div>
       <span style={{ color: T.faint, fontSize: 16 }}>→</span>
     </div>
-    {!compact && <p style={{ margin: 0, fontSize: 13, color: T.muted, lineHeight: 1.55 }}>Ankündigungen, Events und Infos aus dem Team</p>}
+    {!compact && <p style={{ margin: 0, fontSize: 13, color: T.muted, lineHeight: 1.55 }}>{text}</p>}
   </div>
 );
+const NewsTile = (p) => <LinkTile icon="news" titel="News" text="Ankündigungen, Events und Infos aus dem Team" {...p} />;
+const MeinBereichTile = (p) => <LinkTile icon="meinbereich" titel="Mein Bereich" text="Deine Nachrichten und Anfragen – direkt an die Verwaltung" {...p} />;
 
 const AppTiles = ({ tools, compact = false, firmaId = null, children }) => (
   <div style={{ display: 'grid', gridTemplateColumns: compact ? 'repeat(auto-fill,minmax(220px,1fr))' : 'repeat(auto-fill,minmax(300px,1fr))', gap: 14 }}>
@@ -432,6 +435,7 @@ const Employee = ({ user, news, tools, dialoge, ungelesen, meineFirmen, onLogout
             <p style={{ fontSize: 12, color: T.muted, margin: '-0.4rem 0 1.2rem', lineHeight: 1.6 }}>Du bist angemeldet – in den Apps musst du keine PIN mehr eingeben.</p>
             <AppTiles tools={apps} firmaId={user.firmaId}>
               <NewsTile neu={neueNews.length} onClick={() => setTab('news')} />
+              <MeinBereichTile neu={unread} onClick={() => setTab('postfach')} />
             </AppTiles>
             {neu.length > 0 && (
               <div style={{ marginTop: '2rem' }}>
@@ -612,6 +616,7 @@ const Admin = ({ user, news, tools, dialoge, boot, meineFirmen, onLogout, onChan
             <Label>Meine Apps</Label>
             <AppTiles tools={meineApps(tools, meineFirmen)} firmaId={user.firmaId}>
               <NewsTile neu={news.filter(n => n.aktiv !== false && !n.gelesen).length} onClick={() => setTab('news')} />
+              <MeinBereichTile neu={unread} onClick={() => setTab('post')} />
             </AppTiles>
             {unread > 0 && (
               <div style={{ marginTop: '2rem' }}>
