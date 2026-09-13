@@ -2,22 +2,24 @@
 <html lang="de">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#faf8f4" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Portal" />
     <link rel="icon" type="image/svg+xml" href="https://mitarbeiter-api.netlify.app/icons/intranet.svg" />
     <link rel="apple-touch-icon" href="https://mitarbeiter-api.netlify.app/icons/intranet-180.png" />
-    <title>STUFF Intranet — PhysioPro & Pilates Company</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600&display=swap" rel="stylesheet" />
+    <title>Portal — PhysioPro & Pilates Company</title>
+    <!-- Gemeinsames Design-System (Schrift, Farben, Bausteine) für Portal, Zeiterfassung und Fahrtenbuch -->
+    <link rel="stylesheet" href="https://mitarbeiter-api.netlify.app/ui.css" />
     <style>
-      * { margin: 0; padding: 0; box-sizing: border-box; }
-      body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; background-color: #faf8f4; color: #333; }
+      html { background: #faf8f4; }
       #root { min-height: 100vh; }
     </style>
     <!-- Zentraler Mitarbeiter-Dienst: Login, News, Dialoge (gleiche Daten wie in der Zeiterfassung) -->
     <script src="https://mitarbeiter-api.netlify.app/mitarbeiter-client.js"></script>
   </head>
-  <body>
+  <body class="pp pp-body">
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
