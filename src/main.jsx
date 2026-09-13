@@ -362,7 +362,24 @@ const AppIcon = ({ t, firmaId, size = 46 }) => {
     : <div style={{ width: size, height: size, borderRadius: Math.round(size * 0.24), background: T.chip, color: T.green, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: Math.round(size * 0.35), fontWeight: 500, flexShrink: 0 }}>{t.abk || initialsOf(t.name)}</div>;
 };
 
-const AppTiles = ({ tools, compact = false, firmaId = null }) => (
+const tileBase = (compact) => ({ background: T.surface, border: '0.5px solid ' + T.line, borderRadius: 12, padding: compact ? '1rem 1.1rem' : '1.4rem', display: 'flex', flexDirection: 'column', gap: 13, minHeight: compact ? 0 : 120 });
+
+// Kachel für die Team-News (beide Firmen) – gleiche Optik wie die App-Kacheln, führt zum News-Reiter
+const NewsTile = ({ neu = 0, onClick, compact = false }) => (
+  <div onClick={onClick} role="button" style={{ ...tileBase(compact), cursor: 'pointer' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 13 }}>
+      <img src={ICON_BASE + 'news.svg'} alt="" width={compact ? 40 : 46} height={compact ? 40 : 46} style={{ width: compact ? 40 : 46, height: compact ? 40 : 46, borderRadius: 11, flexShrink: 0, display: 'block' }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{ margin: '0 0 2px', fontSize: compact ? 15 : 16, fontWeight: 500, color: T.ink }}>News{neu > 0 && <span style={{ marginLeft: 8, fontSize: 11, color: '#fff', background: T.mauve, borderRadius: 20, padding: '2px 8px', verticalAlign: 'middle' }}>{neu} neu</span>}</p>
+        <FirmTag firm="beide" />
+      </div>
+      <span style={{ color: T.faint, fontSize: 16 }}>→</span>
+    </div>
+    {!compact && <p style={{ margin: 0, fontSize: 13, color: T.muted, lineHeight: 1.55 }}>Ankündigungen, Events und Infos aus dem Team</p>}
+  </div>
+);
+
+const AppTiles = ({ tools, compact = false, firmaId = null, children }) => (
   <div style={{ display: 'grid', gridTemplateColumns: compact ? 'repeat(auto-fill,minmax(220px,1fr))' : 'repeat(auto-fill,minmax(300px,1fr))', gap: 14 }}>
     {tools.map(t => {
       const inner = (
@@ -378,12 +395,13 @@ const AppTiles = ({ tools, compact = false, firmaId = null }) => (
           {!compact && <p style={{ margin: 0, fontSize: 13, color: T.muted, lineHeight: 1.55 }}>{t.beschreibung}</p>}
         </>
       );
-      const base = { background: T.surface, border: '0.5px solid ' + T.line, borderRadius: 12, padding: compact ? '1rem 1.1rem' : '1.4rem', display: 'flex', flexDirection: 'column', gap: 13, minHeight: compact ? 0 : 120 };
+      const base = tileBase(compact);
       const href = appLink(t);
       return href
         ? <a key={t.id} href={href} style={{ ...base, textDecoration: 'none' }}>{inner}</a>
         : <div key={t.id} style={{ ...base, opacity: 0.72 }}>{inner}</div>;
     })}
+    {children}
   </div>
 );
 
@@ -412,16 +430,13 @@ const Employee = ({ user, news, tools, dialoge, ungelesen, meineFirmen, onLogout
           <div>
             <Label>Meine Apps</Label>
             <p style={{ fontSize: 12, color: T.muted, margin: '-0.4rem 0 1.2rem', lineHeight: 1.6 }}>Du bist angemeldet – in den Apps musst du keine PIN mehr eingeben.</p>
-            {apps.length === 0 ? <Empty text="Noch keine Apps für dich freigeschaltet." /> : <AppTiles tools={apps} firmaId={user.firmaId} />}
-            {(neu.length > 0 || neueNews.length > 0) && (
+            <AppTiles tools={apps} firmaId={user.firmaId}>
+              <NewsTile neu={neueNews.length} onClick={() => setTab('news')} />
+            </AppTiles>
+            {neu.length > 0 && (
               <div style={{ marginTop: '2rem' }}>
                 <Label>Neu für dich</Label>
                 {neu.map(d => <DialogThread key={d.id} d={d} user={user} onChanged={onChanged} />)}
-                {neueNews.length > 0 && (
-                  <p style={{ fontSize: 13, color: T.muted, margin: '8px 0 0' }}>
-                    {neueNews.length === 1 ? 'Eine neue News' : neueNews.length + ' neue News'}: {neueNews.slice(0, 3).map(n => '„' + n.titel + '“').join(', ')}{neueNews.length > 3 ? ' …' : ''} – <button onClick={() => setTab('news')} style={{ background: 'none', border: 'none', padding: 0, color: T.mauve, fontSize: 13, cursor: 'pointer', fontWeight: 500 }}>zu den News</button>
-                  </p>
-                )}
               </div>
             )}
           </div>
@@ -595,7 +610,9 @@ const Admin = ({ user, news, tools, dialoge, boot, meineFirmen, onLogout, onChan
         {tab === 'start' && (
           <div>
             <Label>Meine Apps</Label>
-            <AppTiles tools={meineApps(tools, meineFirmen)} firmaId={user.firmaId} />
+            <AppTiles tools={meineApps(tools, meineFirmen)} firmaId={user.firmaId}>
+              <NewsTile neu={news.filter(n => n.aktiv !== false && !n.gelesen).length} onClick={() => setTab('news')} />
+            </AppTiles>
             {unread > 0 && (
               <div style={{ marginTop: '2rem' }}>
                 <Label>Neue Antworten ({unread})</Label>
