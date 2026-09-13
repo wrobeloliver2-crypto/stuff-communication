@@ -33,6 +33,9 @@ try {
   if (!sessionStorage.getItem(TOKEN_KEY) && localStorage.getItem(PERSIST_KEY)) sessionStorage.setItem(TOKEN_KEY, localStorage.getItem(PERSIST_KEY));
 } catch (e) {}
 const MA = window.MitarbeiterClient ? window.MitarbeiterClient({ app: 'intranet' }) : null;
+// Direkt aufgerufene Apps leiten hierher um (?von=zeiterfassung): die Kachel wird hervorgehoben,
+// die Startseite bleibt der Einstieg – so sieht jeder zuerst News und Hinweise.
+const VON_APP = (() => { try { const v = new URLSearchParams(location.search).get('von'); if (v) history.replaceState(null, '', location.pathname); return v; } catch (e) { return null; } })();
 const persistToken = () => { try { MA && MA.token ? localStorage.setItem(PERSIST_KEY, MA.token) : localStorage.removeItem(PERSIST_KEY); } catch (e) {} };
 
 const UPLOAD_URL = '/.netlify/functions/upload';
@@ -428,7 +431,8 @@ const AppIcon = ({ t, firmaId, size = 48 }) => {
 };
 
 // Eine Kachel: Icon links, Titel + Firmen-Tag, eine Zeile Beschreibung, Badge rechts
-const Kachel = ({ icon, titel, tag, text, badge, href, onClick, inaktiv = false }) => {
+const Kachel = ({ icon, titel, tag, text, badge, href, onClick, inaktiv = false, hervor = false }) => {
+  const st = hervor ? { borderColor: T.green, boxShadow: '0 0 0 3px ' + T.greenFl } : undefined;
   const inner = (
     <>
       {icon}
@@ -439,16 +443,16 @@ const Kachel = ({ icon, titel, tag, text, badge, href, onClick, inaktiv = false 
       {badge ? <span className="pp-badge">{badge}</span> : null}
     </>
   );
-  if (href) return <a href={href} className="pp-kachel">{inner}</a>;
+  if (href) return <a href={href} className="pp-kachel" style={st}>{inner}</a>;
   if (inaktiv) return <div className="pp-kachel ist-inaktiv">{inner}</div>;
-  return <button type="button" onClick={onClick} className="pp-kachel">{inner}</button>;
+  return <button type="button" onClick={onClick} className="pp-kachel" style={st}>{inner}</button>;
 };
 const NewsTile = ({ neu = 0, onClick }) => <Kachel onClick={onClick} icon={<span className="pp-kachel__icon"><img src={ICON_BASE + 'news.svg'} alt="" /></span>} titel="News" tag={<FirmTag firm="beide" />} text="Ankündigungen, Events und Infos aus dem Team" badge={neu > 0 ? neu + ' neu' : ''} />;
 const MeinBereichTile = ({ neu = 0, onClick }) => <Kachel onClick={onClick} icon={<span className="pp-kachel__icon"><img src={ICON_BASE + 'meinbereich.svg'} alt="" /></span>} titel="Mein Bereich" tag={<FirmTag firm="beide" />} text="Deine Nachrichten und Anfragen an die Verwaltung" badge={neu > 0 ? neu + ' neu' : ''} />;
 
 const AppTiles = ({ tools, firmaId = null, children }) => (
   <div className="pp-kacheln">
-    {tools.map(t => <Kachel key={t.id} href={appLink(t)} inaktiv={!appLink(t)} icon={<AppIcon t={t} firmaId={firmaId} />} titel={t.name} tag={<FirmTag firm={firmKey(t.firmaId)} />} text={t.beschreibung} />)}
+    {tools.map(t => <Kachel key={t.id} href={appLink(t)} inaktiv={!appLink(t)} hervor={VON_APP === t.kuerzel} icon={<AppIcon t={t} firmaId={firmaId} />} titel={t.name} tag={<FirmTag firm={firmKey(t.firmaId)} />} text={t.beschreibung} />)}
     {children}
   </div>
 );
@@ -470,7 +474,35 @@ const NewsBanner = ({ n, onClick }) => n ? (
   </div>
 ) : null;
 
-// ── Mitarbeiter-Ansicht ─────────────────────────────────────────────────────────
+// Pop-up für eine wichtige, noch ungelesene News: erscheint beim Start, bis sie gelesen wurde
+// („Später" blendet sie nur für diese Sitzung aus).
+const WichtigPopup = ({ n, onGelesen }) => {
+  const [zu, setZu] = useState(false);
+  if (!n || zu) return null;
+  let spaeter = false; try { spaeter = sessionStorage.getItem('pp_spaeter_' + n.id) === '1'; } catch (e) {}
+  if (spaeter) return null;
+  const firm = firmKey(n.firmaId);
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(43,43,40,.45)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={() => { try { sessionStorage.setItem('pp_spaeter_' + n.id, '1'); } catch (e) {} setZu(true); }}>
+      <div className="pp-karte" onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 520, borderRadius: '18px 18px 0 0', padding: '20px 16px calc(20px + env(safe-area-inset-bottom))', maxHeight: '85vh', overflow: 'auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+          <span className="pp-badge">wichtig</span><FirmTag firm={firm} /><span className="pp-meta" style={{ marginLeft: 'auto' }}>{fmtDate(n.erstelltAm)} · {n.von}</span>
+        </div>
+        <h2 className="pp-h2" style={{ marginBottom: 10 }}>{n.titel}</h2>
+        <p style={{ margin: 0, fontSize: 15, lineHeight: 1.6, color: T.muted, whiteSpace: 'pre-wrap' }}>{n.text}</p>
+        {n.termin && <p style={{ margin: '10px 0 0', fontSize: 14, color: T.green, fontWeight: 600 }}>📅 {fmtTermin(n.termin)}</p>}
+        {n.link && <p style={{ margin: '8px 0 0' }}><a href={n.link} target="_blank" rel="noopener noreferrer" style={{ color: T.green, fontSize: 14, fontWeight: 600 }}>→ {n.linkLabel || n.link}</a></p>}
+        {n.anhang && <FileChip name={n.anhang.name || 'Anhang'} url={n.anhang.url || null} />}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 18 }}>
+          <button className="pp-btn pp-btn--breit" onClick={async () => { await MA.gelesen(n.id); setZu(true); onGelesen(); }}>Gelesen</button>
+          <button className="pp-btn pp-btn--sekundaer pp-btn--breit" onClick={() => { try { sessionStorage.setItem('pp_spaeter_' + n.id, '1'); } catch (e) {} setZu(true); }}>Später</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── Mitarbeiter-Ansicht ─────────────────────────────────────────────────────────────
 const Employee = ({ user, news, tools, dialoge, ungelesen, meineFirmen, onLogout, onChanged }) => {
   const [tab, setTab] = useState('start');
   const unread = dialoge.filter(d => d.ungelesen > 0).length;
@@ -503,6 +535,7 @@ const Employee = ({ user, news, tools, dialoge, ungelesen, meineFirmen, onLogout
         {tab === 'news' && <NewsFeed news={news} onChanged={onChanged} />}
         {tab === 'postfach' && <Postfach user={user} dialoge={dialoge} onChanged={onChanged} />}
       </div>
+      <WichtigPopup key={(neueNews.find(n => n.wichtig) || {}).id} n={neueNews.find(n => n.wichtig)} onGelesen={onChanged} />
     </div>
   );
 };
@@ -944,7 +977,7 @@ const AdminPost = ({ user, employees, dialoge, onChanged }) => {
   );
 };
 
-// ── Mitarbeiter (Verwaltung) ──────────────────────────────────────────────────────
+// ── Mitarbeiter (Verwaltung) ──────────────────────────────────────────────────────────
 const copyText = async (text, doneMsg = 'Kopiert — jetzt einfügen und an die Person schicken.') => {
   try { await navigator.clipboard.writeText(text); alert(doneMsg); }
   catch (e) { prompt('Kopieren nicht möglich — bitte den Text manuell markieren:', text); }
