@@ -412,8 +412,9 @@ const Login = ({ boot, onLogin, onPinSetzen }) => {
 // Kacheln der Apps, die zur Person passen (Firma) – mit Direkteinstieg:
 // der Sitzungs-Token wird im URL-Fragment mitgegeben, die App meldet damit an.
 const meineApps = (tools, meineFirmen) => tools.filter(t => t.aktiv && t.imIntranet && (t.firmaId === null || meineFirmen.includes(t.firmaId)));
-// Verwaltung: jede aktive App – unabhängig von Firma und davon, ob sie eine Kachel im Portal hat.
-const alleApps = (tools) => tools.filter(t => t.aktiv);
+// Verwaltung: jede aktive App mit Oberfläche – unabhängig von Firma und Kachel-Häkchen.
+// Ausgenommen: das Portal selbst und Einträge ohne Link (z. B. der Mitarbeiter-Dienst im Hintergrund).
+const alleApps = (tools) => tools.filter(t => t.aktiv && t.url && t.kuerzel !== 'intranet');
 const appLink = (t) => t.url ? t.url + (MA && MA.token ? '#ma=' + encodeURIComponent(MA.token) : '') : null;
 
 // App-Icons (zentral im Mitarbeiter-Dienst): Zeiterfassung in Physio-Grün oder Pilates-Rosé,
