@@ -475,8 +475,8 @@ const NewsBanner = ({ n, onClick }) => n ? (
 ) : null;
 
 // Pop-up für eine wichtige, noch ungelesene News: erscheint beim Start, bis sie gelesen wurde
-// („Später" blendet sie nur für diese Sitzung aus).
-const WichtigPopup = ({ n, onGelesen }) => {
+// („Später" blendet sie nur für diese Sitzung aus). In der Vorschau wird nichts gespeichert.
+const WichtigPopup = ({ n, onGelesen, vorschau = false }) => {
   const [zu, setZu] = useState(false);
   if (!n || zu) return null;
   let spaeter = false; try { spaeter = sessionStorage.getItem('pp_spaeter_' + n.id) === '1'; } catch (e) {}
@@ -494,7 +494,7 @@ const WichtigPopup = ({ n, onGelesen }) => {
         {n.link && <p style={{ margin: '8px 0 0' }}><a href={n.link} target="_blank" rel="noopener noreferrer" style={{ color: T.green, fontSize: 14, fontWeight: 600 }}>→ {n.linkLabel || n.link}</a></p>}
         {n.anhang && <FileChip name={n.anhang.name || 'Anhang'} url={n.anhang.url || null} />}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 18 }}>
-          <button className="pp-btn pp-btn--breit" onClick={async () => { await MA.gelesen(n.id); setZu(true); onGelesen(); }}>Gelesen</button>
+          <button className="pp-btn pp-btn--breit" onClick={async () => { if (!vorschau) { await MA.gelesen(n.id); onGelesen(); } setZu(true); }}>Gelesen</button>
           <button className="pp-btn pp-btn--sekundaer pp-btn--breit" onClick={() => { try { sessionStorage.setItem('pp_spaeter_' + n.id, '1'); } catch (e) {} setZu(true); }}>Später</button>
         </div>
       </div>
@@ -503,7 +503,8 @@ const WichtigPopup = ({ n, onGelesen }) => {
 };
 
 // ── Mitarbeiter-Ansicht ─────────────────────────────────────────────────────────────────
-const Employee = ({ user, news, tools, dialoge, ungelesen, meineFirmen, onLogout, onChanged }) => {
+// vorschau = true: Die Verwaltung schaut nur zu – nichts wird als gelesen markiert.
+const Employee = ({ user, news, tools, dialoge, ungelesen, meineFirmen, onLogout, onChanged, vorschau = false }) => {
   const [tab, setTab] = useState('start');
   const unread = dialoge.filter(d => d.ungelesen > 0).length;
   const apps = meineApps(tools, meineFirmen);
@@ -527,27 +528,27 @@ const Employee = ({ user, news, tools, dialoge, ungelesen, meineFirmen, onLogout
             {neu.length > 0 && (
               <div style={{ marginTop: 28 }}>
                 <Label>Neu für dich</Label>
-                {neu.map(d => <DialogThread key={d.id} d={d} user={user} onChanged={onChanged} />)}
+                {neu.map(d => <DialogThread key={d.id} d={d} user={user} onChanged={onChanged} vorschau={vorschau} />)}
               </div>
             )}
           </div>
         )}
-        {tab === 'news' && <NewsFeed news={news} onChanged={onChanged} />}
-        {tab === 'postfach' && <Postfach user={user} dialoge={dialoge} onChanged={onChanged} />}
+        {tab === 'news' && <NewsFeed news={news} onChanged={onChanged} vorschau={vorschau} />}
+        {tab === 'postfach' && <Postfach user={user} dialoge={dialoge} onChanged={onChanged} vorschau={vorschau} />}
       </div>
-      <WichtigPopup key={(neueNews.find(n => n.wichtig) || {}).id} n={neueNews.find(n => n.wichtig)} onGelesen={onChanged} />
+      <WichtigPopup key={(neueNews.find(n => n.wichtig) || {}).id} n={neueNews.find(n => n.wichtig)} onGelesen={onChanged} vorschau={vorschau} />
     </div>
   );
 };
 
-const NewsFeed = ({ news, onChanged }) => {
+const NewsFeed = ({ news, onChanged, vorschau = false }) => {
   const visible = news.filter(n => n.aktiv !== false);
   return (
     <div>
       <Label>News</Label>
       {visible.length === 0 && <Empty text="Noch keine News veröffentlicht." />}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))', gap: 12 }}>
-        {visible.map(n => <NewsCard key={n.id} n={n} onRead={async () => { if (!n.gelesen) { await MA.gelesen(n.id); onChanged(); } }} />)}
+        {visible.map(n => <NewsCard key={n.id} n={n} onRead={async () => { if (!vorschau && !n.gelesen) { await MA.gelesen(n.id); onChanged(); } }} />)}
       </div>
     </div>
   );
@@ -594,18 +595,18 @@ const NewsCard = ({ n, onRead }) => {
   );
 };
 
-const Postfach = ({ user, dialoge, onChanged }) => (
+const Postfach = ({ user, dialoge, onChanged, vorschau = false }) => (
   <div>
     <Label>Mein Bereich</Label>
     <p className="pp-sek" style={{ margin: '-4px 0 16px' }}>Hier erhältst du persönliche Nachrichten und Dokumente von der Verwaltung. Du kannst direkt antworten und Dateien zurücksenden.</p>
     {dialoge.length === 0 && <Empty text="Noch keine Nachrichten in deinem Bereich." />}
-    {dialoge.map(d => <DialogThread key={d.id} d={d} user={user} onChanged={onChanged} />)}
+    {dialoge.map(d => <DialogThread key={d.id} d={d} user={user} onChanged={onChanged} vorschau={vorschau} />)}
   </div>
 );
 
 // Ein Dialog (Mitarbeiter- und Verwaltungsansicht): Kopfzeile aus der Liste,
 // beim Aufklappen wird der Verlauf vom Dienst geholt (und als gelesen markiert).
-const DialogThread = ({ d, user, admin = false, onChanged }) => {
+const DialogThread = ({ d, user, admin = false, onChanged, vorschau = false }) => {
   const [open, setOpen] = useState(false);
   const [thread, setThread] = useState(null);
   const [reply, setReply] = useState('');
@@ -613,8 +614,8 @@ const DialogThread = ({ d, user, admin = false, onChanged }) => {
   const [mail, setMail] = useState(false);
   const [busy, setBusy] = useState(false);
   const unread = d.ungelesen > 0;
-  const load = async () => { const r = await MA.dialog(d.id); if (r && !r.error) setThread(r); };
-  const toggle = async () => { const o = !open; setOpen(o); if (o) { await load(); if (unread) onChanged(); } };
+  const load = async () => { const r = await MA.dialog(d.id, vorschau); if (r && !r.error) setThread(r); };
+  const toggle = async () => { const o = !open; setOpen(o); if (o) { await load(); if (unread && !vorschau) onChanged(); } };
   const send = async () => {
     if (!reply.trim()) return;
     setBusy(true);
@@ -654,7 +655,9 @@ const DialogThread = ({ d, user, admin = false, onChanged }) => {
             <p className="pp-meta" style={{ margin: '10px 0 0' }}>Empfänger: {thread.teilnehmer.filter(t => t.rolle === 'empfaenger').map(t => t.name + (t.gelesenAm ? ' (gelesen ' + fmtDateTime(t.gelesenAm) + ')' : ' (noch nicht gelesen)')).join(' · ')}</p>
           )}
           <div style={{ marginTop: 14, borderTop: '1px solid ' + T.lineSoft, paddingTop: 12 }}>
-            {closed && !admin ? (
+            {vorschau ? (
+              <p className="pp-meta" style={{ margin: 0, fontStyle: 'italic' }}>Vorschau – in der echten Ansicht steht hier das Antwortfeld.</p>
+            ) : closed && !admin ? (
               <p className="pp-meta" style={{ margin: 0, fontStyle: 'italic' }}>Dieser Dialog wurde von der Verwaltung beendet.</p>
             ) : (
               <>
@@ -692,15 +695,16 @@ const Admin = ({ user, news, tools, dialoge, boot, meineFirmen, onLogout, onChan
   const tabs = [['start', 'Start', 'start'], ['news', 'News', 'news'], ['tools', 'Tools & Links', 'tools'], ['post', 'Nachrichten', 'postfach', unread], ['team', 'Mitarbeiter', 'team'], ['audit', 'Protokoll', 'audit']];
   // Leiste unten: höchstens fünf Reiter – Tools und Protokoll liegen hinter „Mehr"
   const mobileTabs = [['start', 'Start', 'start'], ['news', 'News', 'news'], ['post', 'Nachrichten', 'postfach', unread], ['team', 'Team', 'team'], ['mehr', 'Mehr', 'mehr', 0, ['tools', 'audit']]];
-  // Vorschau: das Portal genau so sehen, wie es Mitarbeiter sehen (gleiche Daten, Mitarbeiter-Ansicht)
+  // Vorschau: das Portal genau so sehen, wie es Mitarbeiter sehen (gleiche Daten, Mitarbeiter-Ansicht).
+  // Reine Ansicht – es werden keine Lesebestätigungen gesetzt und nichts gesendet.
   if (vorschau) return (
     <div>
       <div style={{ background: T.roseDark, color: '#fff', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 12, fontSize: 13.5 }}>
         <span style={{ flex: 1 }}><strong>Vorschau</strong> – so sieht ein Mitarbeiter das Portal</span>
         <button onClick={() => setVorschau(false)} className="pp-btn pp-btn--klein" style={{ background: '#fff', color: T.roseDark, border: 'none' }}>Zurück zur Verwaltung</button>
       </div>
-      <button onClick={() => setVorschau(false)} className="pp-btn pp-btn--klein" style={{ position: 'fixed', right: 12, bottom: 'calc(var(--pp-nav-h, 60px) + 16px + env(safe-area-inset-bottom))', zIndex: 95, background: T.roseDark, color: '#fff', border: 'none', boxShadow: '0 4px 14px rgba(0,0,0,.18)' }}>Vorschau beenden</button>
-      <Employee user={user} news={news} tools={tools} dialoge={dialoge} ungelesen={{ nachrichten: 0, dialoge: unread }} meineFirmen={meineFirmen} onLogout={onLogout} onChanged={onChanged} />
+      <button onClick={() => setVorschau(false)} className="pp-btn pp-btn--klein" style={{ position: 'fixed', right: 12, bottom: 'calc(var(--pp-nav-h, 60px) + 16px + env(safe-area-inset-bottom))', zIndex: 45, background: T.roseDark, color: '#fff', border: 'none', boxShadow: '0 4px 14px rgba(0,0,0,.18)' }}>Vorschau beenden</button>
+      <Employee user={user} news={news} tools={tools} dialoge={dialoge} ungelesen={{ nachrichten: 0, dialoge: unread }} meineFirmen={meineFirmen} onLogout={onLogout} onChanged={onChanged} vorschau />
     </div>
   );
   return (
