@@ -595,10 +595,51 @@ const NewsCard = ({ n, onRead }) => {
   );
 };
 
+// Einwilligung in die WhatsApp-Hinweise. Steht bewusst hier und nicht in einem
+// Einstellungsmenü: Wer seine Nachrichten liest, soll den Schalter dabei sehen.
+// Standard ist an – abschalten muss deshalb mit einem Griff gehen.
+const WaSchalter = ({ vorschau = false }) => {
+  const [stand, setStand] = useState(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { (async () => {
+    const r = await MA.waEinstellung();
+    if (r && !r.error) setStand(r);
+  })(); }, []);
+  if (!stand || !stand.moeglich) return null;
+  const an = !!stand.aktiv;
+  const um = async () => {
+    if (vorschau || busy) return;
+    setBusy(true);
+    const r = await MA.waEinstellung({ aktiv: !an });
+    setBusy(false);
+    if (r && !r.error) setStand(r);
+  };
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: '#fff', border: '1px solid ' + T.line,
+      borderRadius: 12, padding: '12px 14px', margin: '0 0 16px' }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Hinweise per WhatsApp</p>
+        <p className="pp-meta" style={{ margin: '2px 0 0' }}>
+          {an ? 'Kurze Info an ' + stand.telefon + ', wenn hier etwas Wichtiges für dich liegt. Geantwortet wird im Portal.'
+              : 'Aus – du siehst neue Nachrichten nur hier im Portal.'}
+        </p>
+      </div>
+      <button onClick={um} disabled={vorschau || busy} aria-pressed={an} title={an ? 'Ausschalten' : 'Einschalten'}
+        style={{ flexShrink: 0, width: 48, height: 28, borderRadius: 999, border: 'none', padding: 0,
+          cursor: vorschau ? 'default' : 'pointer', opacity: vorschau ? .6 : 1,
+          background: an ? T.green : '#cfc9c2', transition: 'background .15s' }}>
+        <span style={{ display: 'block', width: 22, height: 22, borderRadius: '50%', background: '#fff',
+          transform: `translateX(${an ? 23 : 3}px)`, transition: 'transform .15s' }} />
+      </button>
+    </div>
+  );
+};
+
 const Postfach = ({ user, dialoge, onChanged, vorschau = false }) => (
   <div>
     <Label>Mein Bereich</Label>
     <p className="pp-sek" style={{ margin: '-4px 0 16px' }}>Hier erhältst du persönliche Nachrichten und Dokumente von der Verwaltung. Du kannst direkt antworten und Dateien zurücksenden.</p>
+    <WaSchalter vorschau={vorschau} />
     {dialoge.length === 0 && <Empty text="Noch keine Nachrichten in deinem Bereich." />}
     {dialoge.map(d => <DialogThread key={d.id} d={d} user={user} onChanged={onChanged} vorschau={vorschau} />)}
   </div>
