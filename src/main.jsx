@@ -412,6 +412,8 @@ const Login = ({ boot, onLogin, onPinSetzen }) => {
 // Kacheln der Apps, die zur Person passen (Firma) – mit Direkteinstieg:
 // der Sitzungs-Token wird im URL-Fragment mitgegeben, die App meldet damit an.
 const meineApps = (tools, meineFirmen) => tools.filter(t => t.aktiv && t.imIntranet && (t.firmaId === null || meineFirmen.includes(t.firmaId)));
+// Verwaltung: jede aktive App – unabhängig von Firma und davon, ob sie eine Kachel im Portal hat.
+const alleApps = (tools) => tools.filter(t => t.aktiv);
 const appLink = (t) => t.url ? t.url + (MA && MA.token ? '#ma=' + encodeURIComponent(MA.token) : '') : null;
 
 // App-Icons (zentral im Mitarbeiter-Dienst): Zeiterfassung in Physio-Grün oder Pilates-Rosé,
@@ -733,7 +735,7 @@ const Admin = ({ user, news, tools, dialoge, boot, meineFirmen, onLogout, onChan
   useEffect(() => { ladeEmployees(); }, [boot]);
   const unread = dialoge.filter(d => d.ungelesen > 0).length;
   const neueNews = news.filter(n => n.aktiv !== false && !n.gelesen).length;
-  const tabs = [['start', 'Start', 'start'], ['news', 'News', 'news'], ['tools', 'Tools & Links', 'tools'], ['post', 'Nachrichten', 'postfach', unread], ['team', 'Mitarbeiter', 'team'], ['audit', 'Protokoll', 'audit']];
+  const tabs = [['start', 'Start', 'start'], ['news', 'News', 'news'], ['tools', 'Apps & Links', 'tools'], ['post', 'Nachrichten', 'postfach', unread], ['team', 'Mitarbeiter', 'team'], ['audit', 'Protokoll', 'audit']];
   // Leiste unten: höchstens fünf Reiter – Tools und Protokoll liegen hinter „Mehr"
   const mobileTabs = [['start', 'Start', 'start'], ['news', 'News', 'news'], ['post', 'Nachrichten', 'postfach', unread], ['team', 'Team', 'team'], ['mehr', 'Mehr', 'mehr', 0, ['tools', 'audit']]];
   // Vorschau: das Portal genau so sehen, wie es Mitarbeiter sehen (gleiche Daten, Mitarbeiter-Ansicht).
@@ -756,8 +758,9 @@ const Admin = ({ user, news, tools, dialoge, boot, meineFirmen, onLogout, onChan
         {tab === 'start' && (
           <div>
             <Begruessung user={user} nachrichten={unread} />
-            <Label>Meine Apps</Label>
-            <AppTiles tools={meineApps(tools, meineFirmen)} firmaId={user.firmaId}>
+            <Label>Alle Apps</Label>
+            <p className="pp-sek" style={{ margin: '-4px 0 12px' }}>Als Verwaltung kommst du von hier in jede App – auch in die, die für das Team keine Kachel hat. Du bist dabei schon angemeldet.</p>
+            <AppTiles tools={alleApps(tools)} firmaId={user.firmaId}>
               <NewsTile neu={neueNews} onClick={() => setTab('news')} />
               <MeinBereichTile neu={unread} onClick={() => setTab('post')} />
               <Kachel onClick={() => setVorschau(true)} icon={<span className="pp-kachel__icon pp-kachel__icon--rose"><NavIcon name="postfach" /></span>} titel="Vorschau" tag={<span className="pp-tag pp-tag--rose">Verwaltung</span>} text="Portal so sehen, wie es das Team sieht" />
@@ -774,7 +777,7 @@ const Admin = ({ user, news, tools, dialoge, boot, meineFirmen, onLogout, onChan
           <div>
             <Label>Mehr</Label>
             <div className="pp-kacheln">
-              <Kachel onClick={() => setTab('tools')} icon={<span className="pp-kachel__icon"><NavIcon name="tools" /></span>} titel="Tools & Links" text="Apps und Links für die Kacheln pflegen" />
+              <Kachel onClick={() => setTab('tools')} icon={<span className="pp-kachel__icon"><NavIcon name="tools" /></span>} titel="Apps & Links" text="Alle Apps öffnen und ihre Einträge pflegen" />
               <Kachel onClick={() => setTab('audit')} icon={<span className="pp-kachel__icon"><NavIcon name="audit" /></span>} titel="Protokoll" text="Logins, Nachrichten und Lesebestätigungen" />
               <Kachel onClick={() => setVorschau(true)} icon={<span className="pp-kachel__icon"><NavIcon name="postfach" /></span>} titel="Vorschau als Mitarbeiter" text="Portal so sehen, wie es das Team sieht" />
             </div>
@@ -932,7 +935,7 @@ const AdminTools = ({ tools, onChanged }) => {
   return (
     <div>
       <div className="pp-karte">
-        <Label>{editId ? 'Tool / Link bearbeiten' : 'Tool / Link hinzufügen'}</Label>
+        <Label>{editId ? "App / Link bearbeiten" : "App / Link hinzufügen"}</Label>
         {editId && <EditHinweis text="Du bearbeitest einen bestehenden Eintrag." onCancel={reset} />}
         <span className="pp-feld__label" style={{ display: 'block', marginBottom: 8 }}>Für welche Firma?</span>
         <FirmPicker value={firm} onChange={setFirm} />
@@ -942,12 +945,12 @@ const AdminTools = ({ tools, onChanged }) => {
         </div>
         <Feld label="Kurze Beschreibung"><input className="pp-input" value={desc} onChange={e => setDesc(e.target.value)} /></Feld>
         <Feld label="Link"><input className="pp-input" placeholder="https://…" value={url} onChange={e => setUrl(e.target.value)} /></Feld>
-        <label className="pp-check" style={{ marginBottom: 16 }}><input type="checkbox" checked={imIntranet} onChange={e => setImIntranet(e.target.checked)} /> Als Kachel im Portal zeigen</label>
+        <label className="pp-check" style={{ marginBottom: 16 }}><input type="checkbox" checked={imIntranet} onChange={e => setImIntranet(e.target.checked)} /> Für die Mitarbeiter als Kachel im Portal zeigen</label>
         <button className="pp-btn pp-btn--breit" onClick={submit}>{editId ? 'Änderungen speichern' : 'Hinzufügen'}</button>
       </div>
       <div className="pp-karte">
         <Label>Apps & Links ({tools.length})</Label>
-        <p className="pp-sek" style={{ margin: '-4px 0 12px' }}>Alle Apps der zentralen Datenbank. Nur Einträge mit „Kachel im Portal" erscheinen bei den Mitarbeitern.</p>
+        <p className="pp-sek" style={{ margin: '-4px 0 12px' }}>Das Verzeichnis aller Apps. <strong>Öffnen</strong> startet die App (bei Zeiterfassung und Fahrtenbuch direkt angemeldet), <strong>Bearbeiten</strong> ändert Name, Link und Firma. Das Häkchen „Kachel im Portal" steuert nur, ob die Mitarbeiter die App auf ihrer Startseite sehen – du selbst erreichst immer alle.</p>
         {tools.map(t => (
           <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid ' + T.lineSoft, gap: 8, flexWrap: 'wrap', opacity: t.aktiv ? 1 : 0.5 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
@@ -956,11 +959,12 @@ const AdminTools = ({ tools, onChanged }) => {
                 <p style={{ margin: 0, fontSize: 15, fontWeight: 600, color: T.ink }}>{t.name}{t.imIntranet && <span className="pp-tag pp-tag--gruen" style={{ marginLeft: 8 }}>Kachel</span>}{!t.aktiv && <span className="pp-tag" style={{ marginLeft: 8 }}>eingestellt</span>}</p>
                 <div style={{ margin: '4px 0 0', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <FirmTag firm={firmKey(t.firmaId)} />
-                  {t.url && <span className="pp-meta" style={{ wordBreak: 'break-all' }}>{t.url}</span>}
+                  {t.url && <a href={appLink(t)} target="_blank" rel="noopener noreferrer" className="pp-meta" style={{ wordBreak: 'break-all' }}>{t.url}</a>}
                 </div>
               </div>
             </div>
-            <div style={{ display: 'flex', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {t.url && <a href={appLink(t)} target="_blank" rel="noopener noreferrer" className="pp-btn pp-btn--klein">Öffnen</a>}
               <button onClick={() => startEdit(t)} className="pp-btn pp-btn--leise">Bearbeiten</button>
               {t.aktiv
                 ? <button onClick={async () => { if (confirm(t.name + ' einstellen? Der Eintrag bleibt erhalten, wird aber nirgends mehr angezeigt.')) { await MA.appSetzen({ id: t.id, aktiv: false, imIntranet: false }); onChanged(); } }} className="pp-btn pp-btn--leise pp-btn--gefahr">Einstellen</button>
