@@ -84,7 +84,7 @@ const heuteLang = () => new Date().toLocaleDateString('de-DE', { weekday: 'long'
 const gruss = () => { const h = new Date().getHours(); return h < 11 ? 'Guten Morgen' : h < 18 ? 'Guten Tag' : 'Guten Abend'; };
 const vornameVon = (name) => (name || '').trim().split(/\s+/)[0] || '';
 
-// ── App ───────────────────────────────────────────────────────────────────────
+// ── App ────────────────────────────────────────────────────────────────────
 const App = () => {
   const [phase, setPhase] = useState('loading'); // loading | login | app
   const [boot, setBoot] = useState({ firmen: [], personen: [] });
@@ -502,7 +502,7 @@ const WichtigPopup = ({ n, onGelesen }) => {
   );
 };
 
-// ── Mitarbeiter-Ansicht ─────────────────────────────────────────────────────────────
+// ── Mitarbeiter-Ansicht ─────────────────────────────────────────────────────────────────
 const Employee = ({ user, news, tools, dialoge, ungelesen, meineFirmen, onLogout, onChanged }) => {
   const [tab, setTab] = useState('start');
   const unread = dialoge.filter(d => d.ungelesen > 0).length;
@@ -680,11 +680,12 @@ const DialogThread = ({ d, user, admin = false, onChanged }) => {
   );
 };
 
-// ── Verwaltung ────────────────────────────────────────────────────────────────
+// ── Verwaltung ────────────────────────────────────────────────────────────────────
 const Admin = ({ user, news, tools, dialoge, boot, meineFirmen, onLogout, onChanged }) => {
   const [tab, setTab] = useState('start');
   const [employees, setEmployees] = useState([]);
-  useEffect(() => { (async () => { const r = await MA.mitarbeiter({ firmaId: null }); if (r && !r.error) setEmployees(r.personen || []); })(); }, [boot]);
+  const ladeEmployees = async () => { const r = await MA.mitarbeiter({ firmaId: null }); if (r && !r.error) setEmployees(r.personen || []); };
+  useEffect(() => { ladeEmployees(); }, [boot]);
   const unread = dialoge.filter(d => d.ungelesen > 0).length;
   const neueNews = news.filter(n => n.aktiv !== false && !n.gelesen).length;
   const tabs = [['start', 'Start', 'start'], ['news', 'News', 'news'], ['tools', 'Tools & Links', 'tools'], ['post', 'Nachrichten', 'postfach', unread], ['team', 'Mitarbeiter', 'team'], ['audit', 'Protokoll', 'audit']];
@@ -723,7 +724,7 @@ const Admin = ({ user, news, tools, dialoge, boot, meineFirmen, onLogout, onChan
         {tab === 'news' && <AdminNews news={news} onChanged={onChanged} />}
         {tab === 'tools' && <AdminTools tools={tools} onChanged={onChanged} />}
         {tab === 'post' && <AdminPost user={user} employees={employees} dialoge={dialoge} onChanged={onChanged} />}
-        {tab === 'team' && <AdminTeam employees={employees} boot={boot} />}
+        {tab === 'team' && <AdminTeam employees={employees} boot={boot} onEmployeesChanged={ladeEmployees} />}
         {tab === 'audit' && <AdminAudit />}
       </div>
     </div>
@@ -977,7 +978,7 @@ const AdminPost = ({ user, employees, dialoge, onChanged }) => {
   );
 };
 
-// ── Mitarbeiter (Verwaltung) ──────────────────────────────────────────────────────────
+// ── Mitarbeiter (Verwaltung) ──────────────────────────────────────────────────────────────────
 const copyText = async (text, doneMsg = 'Kopiert — jetzt einfügen und an die Person schicken.') => {
   try { await navigator.clipboard.writeText(text); alert(doneMsg); }
   catch (e) { prompt('Kopieren nicht möglich — bitte den Text manuell markieren:', text); }
@@ -1027,17 +1028,132 @@ const InvitePanel = ({ emp, onClose, mode = 'invite' }) => {
   );
 };
 
-const AdminTeam = ({ employees, boot }) => {
+// ── Team: Personen anlegen, ändern, Austritt ─────────────────────────────────────────────
+const ROLLEN = [['mitarbeiter', 'Mitarbeiter:in'], ['genehmiger', 'Genehmiger:in (entscheidet Anträge)'], ['admin', 'Admin (Verwaltung)']];
+const WOCHENTAGE = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+const FIRMA_OPTS = [[1, 'PhysioPro'], [2, 'Pilates Company']];
+const leeresVerhaeltnis = (firmaId) => ({ firmaId, aktiv: true, rolle: 'mitarbeiter', anzeigeRolle: '', personalnummer: '', eintritt: '', arbeitstageProWoche: '5', arbeitstage: '', urlaubsanspruch: '' });
+
+const PersonForm = ({ person, onClose, onSaved }) => {
+  const neu = !person;
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [f, setF] = useState({ vorname: '', nachname: '', email: '', telefon: '' });
+  const [firmen, setFirmen] = useState(neu ? [leeresVerhaeltnis(1)] : []);
+  const [laden, setLaden] = useState(!neu);
+  useEffect(() => {
+    if (neu) return;
+    (async () => {
+      const r = await MA.person(person.mitarbeiterId);
+      if (r && r.person) {
+        const p = r.person;
+        setF({ vorname: p.vorname || '', nachname: p.nachname || '', email: p.email || '', telefon: p.telefon || '' });
+        setFirmen((p.firmen || []).map(v => ({
+          firmaId: v.firmaId, aktiv: v.aktiv !== false, rolle: v.rolle || 'mitarbeiter', anzeigeRolle: v.anzeige_rolle || v.anzeigeRolle || '',
+          personalnummer: v.personalnummer ?? '', eintritt: v.eintritt ? String(v.eintritt).slice(0, 10) : '',
+          arbeitstageProWoche: v.arbeitstageProWoche == null ? '' : String(v.arbeitstageProWoche), arbeitstage: v.arbeitstage || '', urlaubsanspruch: '',
+        })));
+      }
+      setLaden(false);
+    })();
+  }, [person && person.mitarbeiterId]);
+  const set = (k, v) => setF(x => ({ ...x, [k]: v }));
+  const setV = (i, k, v) => setFirmen(a => a.map((x, j) => j === i ? { ...x, [k]: v } : x));
+  const firmaHinzu = () => { const frei = FIRMA_OPTS.find(([id]) => !firmen.some(v => v.firmaId === id)); if (frei) setFirmen(a => [...a, leeresVerhaeltnis(frei[0])]); };
+  const tagToggle = (i, t) => { const cur = (firmen[i].arbeitstage || '').split(',').filter(Boolean); const next = cur.includes(t) ? cur.filter(x => x !== t) : [...cur, t]; setV(i, 'arbeitstage', WOCHENTAGE.filter(w => next.includes(w)).join(',')); if (next.length) setV(i, 'arbeitstageProWoche', String(next.length)); };
+  const speichern = async () => {
+    setErr('');
+    if (!f.vorname.trim() || !f.nachname.trim()) return setErr('Vor- und Nachname sind Pflicht.');
+    if (!firmen.length) return setErr('Mindestens eine Firma wählen.');
+    setBusy(true);
+    const r = await MA.personSetzen({ id: person ? person.mitarbeiterId : undefined, ...f, firmen });
+    setBusy(false);
+    if (!r || r.error) {
+      const m = { email_vergeben: 'Diese E-Mail-Adresse ist schon bei einer anderen Person hinterlegt.', email_format: 'Bitte eine gültige E-Mail-Adresse eingeben.',
+        personalnummer_vergeben: 'Diese Personalnummer ist in der Firma schon vergeben.', name_fehlt: 'Vor- und Nachname sind Pflicht.', firma_fehlt: 'Mindestens eine Firma wählen.' };
+      return setErr(m[r && r.error] || 'Speichern nicht möglich' + (r && r.error ? ' (' + r.error + ')' : '') + '.');
+    }
+    onSaved(r.id, neu);
+  };
+  const sel = { padding: '0 12px' };
+  return (
+    <div style={{ border: '1px solid ' + T.line, borderRadius: 14, padding: 16, marginBottom: 16, background: T.chip }}>
+      <p style={{ fontSize: 15, fontWeight: 600, color: T.ink, margin: '0 0 12px' }}>{neu ? 'Neue Person anlegen' : 'Stammdaten ändern'}</p>
+      {laden ? <p className="pp-meta">Wird geladen …</p> : <>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0 12px' }}>
+          <Feld label="Vorname"><input className="pp-input" value={f.vorname} onChange={e => set('vorname', e.target.value)} autoComplete="off" /></Feld>
+          <Feld label="Nachname"><input className="pp-input" value={f.nachname} onChange={e => set('nachname', e.target.value)} autoComplete="off" /></Feld>
+          <Feld label="E-Mail (optional)"><input className="pp-input" type="email" value={f.email} onChange={e => set('email', e.target.value)} autoComplete="off" /></Feld>
+          <Feld label="Handy (optional)"><input className="pp-input" type="tel" value={f.telefon} onChange={e => set('telefon', e.target.value)} autoComplete="off" /></Feld>
+        </div>
+        <p className="pp-meta" style={{ margin: '0 0 10px' }}>E-Mail und Handy kann die Person beim ersten Login selbst ergänzen.</p>
+        {firmen.map((v, i) => {
+          const tage = (v.arbeitstage || '').split(',').filter(Boolean);
+          return (
+            <div key={v.firmaId} style={{ border: '1px solid ' + T.line, borderRadius: 12, padding: '12px 14px', marginBottom: 10, background: T.surface, opacity: v.aktiv ? 1 : .6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+                <FirmTag firm={v.firmaId === 2 ? 'pilates' : 'physio'} />
+                <span style={{ flex: 1 }} />
+                {!neu && <label className="pp-check" style={{ margin: 0 }}><input type="checkbox" checked={v.aktiv} onChange={e => setV(i, 'aktiv', e.target.checked)} /> <span>aktiv</span></label>}
+                {neu && firmen.length > 1 && <button className="pp-btn pp-btn--leise pp-btn--klein" onClick={() => setFirmen(a => a.filter((_, j) => j !== i))}>Entfernen</button>}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0 12px' }}>
+                <Feld label="Rolle in der App"><select className="pp-select" style={sel} value={v.rolle} onChange={e => setV(i, 'rolle', e.target.value)}>{ROLLEN.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Feld>
+                <Feld label="Berufsbezeichnung"><input className="pp-input" value={v.anzeigeRolle} placeholder="z. B. Physiotherapeutin" onChange={e => setV(i, 'anzeigeRolle', e.target.value)} /></Feld>
+                <Feld label="Personalnummer (Lohn)"><input className="pp-input" inputMode="numeric" value={v.personalnummer} onChange={e => setV(i, 'personalnummer', e.target.value.replace(/\D/g, ''))} /></Feld>
+                <Feld label="Eintritt"><input className="pp-input" type="date" value={v.eintritt} onChange={e => setV(i, 'eintritt', e.target.value)} /></Feld>
+                <Feld label="Arbeitstage pro Woche"><input className="pp-input" inputMode="decimal" value={v.arbeitstageProWoche} onChange={e => setV(i, 'arbeitstageProWoche', e.target.value.replace(',', '.'))} /></Feld>
+                <Feld label={'Urlaubsanspruch ' + new Date().getFullYear() + ' (Tage)'}><input className="pp-input" inputMode="decimal" value={v.urlaubsanspruch} placeholder={neu ? '' : 'unverändert'} onChange={e => setV(i, 'urlaubsanspruch', e.target.value.replace(',', '.'))} /></Feld>
+              </div>
+              <span className="pp-feld__label" style={{ display: 'block', marginBottom: 6 }}>Feste Arbeitstage (leer = wechselnd)</span>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
+                {WOCHENTAGE.map(t => <button key={t} type="button" className={'pp-btn pp-btn--klein ' + (tage.includes(t) ? '' : 'pp-btn--leise')} onClick={() => tagToggle(i, t)}>{t}</button>)}
+              </div>
+            </div>
+          );
+        })}
+        {firmen.length < FIRMA_OPTS.length && <button className="pp-btn pp-btn--leise" onClick={firmaHinzu} style={{ marginBottom: 12 }}>+ Auch in der anderen Firma</button>}
+        {err && <p style={{ color: T.err, fontSize: 13.5, fontWeight: 600, margin: '0 0 10px' }}>{err}</p>}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button className="pp-btn" disabled={busy} onClick={speichern}>{busy ? 'Wird gespeichert …' : (neu ? 'Person anlegen' : 'Speichern')}</button>
+          <button className="pp-btn pp-btn--leise" onClick={onClose} style={{ border: 'none' }}>Abbrechen</button>
+        </div>
+      </>}
+    </div>
+  );
+};
+
+const AdminTeam = ({ employees, boot, onEmployeesChanged }) => {
   const [inviteFor, setInviteFor] = useState(null);
   const [inviteMode, setInviteMode] = useState('invite');
-  const pinMap = new Map((boot.personen || []).map(p => [p.mitarbeiterId, p.pinGesetzt]));
+  const [editFor, setEditFor] = useState(null); // 'neu' | mitarbeiterId
+  const [pinPersonen, setPinPersonen] = useState(boot.personen || []);
+  useEffect(() => { setPinPersonen(boot.personen || []); }, [boot]);
+  const pinMap = new Map(pinPersonen.map(p => [p.mitarbeiterId, p.pinGesetzt]));
   const persons = personenDedupe(employees).map(p => ({ ...p, pinGesetzt: !!pinMap.get(p.mitarbeiterId) }));
-  const openInvite = (id, mode) => { if (inviteFor === id && inviteMode === mode) { setInviteFor(null); return; } setInviteMode(mode); setInviteFor(id); };
+  const openInvite = (id, mode) => { if (inviteFor === id && inviteMode === mode) { setInviteFor(null); return; } setInviteMode(mode); setInviteFor(id); setEditFor(null); };
   const firmLabel = (p) => (p.firmen || []).map(f => f === 'physiopro' ? 'PhysioPro' : 'Pilates').join(' + ');
+  const nachSpeichern = async (id, neu) => {
+    setEditFor(null);
+    await onEmployeesChanged();
+    const b = await MA.bootstrap({ nurAntragsberechtigte: false }); if (b && b.personen) setPinPersonen(b.personen);
+    if (neu) { setInviteMode('invite'); setInviteFor(id); }
+  };
+  const austritt = async (e) => {
+    const datum = prompt('Austritt von ' + e.name + ' – Datum (JJJJ-MM-TT). Die Person verschwindet sofort aus allen Apps, Anträge und Daten bleiben erhalten.', new Date().toISOString().slice(0, 10));
+    if (!datum) return;
+    const r = await MA.personAustritt({ id: e.mitarbeiterId, datum });
+    if (!r || r.error) return alert('Nicht möglich.');
+    await onEmployeesChanged();
+  };
   return (
     <div className="pp-karte">
-      <Label>Mitarbeiter ({persons.length})</Label>
-      <p className="pp-sek" style={{ margin: '-4px 0 14px' }}>Stammdaten kommen aus der zentralen Mitarbeiter-Datenbank (Lohnjournal). Neue Personen und Austritte werden dort gepflegt; hier kannst du einladen und PINs zurücksetzen.</p>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+        <Label style={{ margin: 0, flex: 1 }}>Mitarbeiter ({persons.length})</Label>
+        <button className="pp-btn pp-btn--klein" onClick={() => { setInviteFor(null); setEditFor(editFor === 'neu' ? null : 'neu'); }}>+ Neue Person</button>
+      </div>
+      <p className="pp-sek" style={{ margin: '6px 0 14px' }}>Stammdaten liegen in der zentralen Mitarbeiter-Datenbank. Neue Personen erscheinen sofort in allen Apps; die PIN legt die Person beim ersten Login selbst fest.</p>
+      {editFor === 'neu' && <PersonForm onClose={() => setEditFor(null)} onSaved={nachSpeichern} />}
       {persons.map(e => (
         <React.Fragment key={e.mitarbeiterId}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 0', borderBottom: '1px solid ' + T.lineSoft, flexWrap: 'wrap' }}>
@@ -1047,10 +1163,13 @@ const AdminTeam = ({ employees, boot }) => {
               <p className="pp-meta" style={{ margin: '2px 0 0' }}>{e.email || 'keine E-Mail'}{e.telefon ? ' · ' + e.telefon : ''}</p>
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <button onClick={() => { setInviteFor(null); setEditFor(editFor === e.mitarbeiterId ? null : e.mitarbeiterId); }} className="pp-btn pp-btn--leise">Bearbeiten</button>
               <button onClick={() => openInvite(e.mitarbeiterId, 'invite')} className="pp-btn pp-btn--leise" title="Fertigen Einladungstext mit Link anzeigen und kopieren">Einladung</button>
               {e.pinGesetzt && <button onClick={async () => { if (confirm('PIN für ' + e.name + ' zurücksetzen? Sie gilt für alle Apps.')) { const r = await MA.pinZuruecksetzen(e.id); if (!r || r.error) return alert('Nicht möglich.'); openInvite(e.mitarbeiterId, 'reset'); } }} className="pp-btn pp-btn--leise pp-btn--gefahr">PIN zurücksetzen</button>}
+              <button onClick={() => austritt(e)} className="pp-btn pp-btn--leise pp-btn--gefahr">Austritt</button>
             </div>
           </div>
+          {editFor === e.mitarbeiterId && <div style={{ padding: '12px 0' }}><PersonForm person={e} onClose={() => setEditFor(null)} onSaved={nachSpeichern} /></div>}
           {inviteFor === e.mitarbeiterId && <div style={{ padding: '12px 0' }}><InvitePanel emp={e} mode={inviteMode} onClose={() => setInviteFor(null)} /></div>}
         </React.Fragment>
       ))}
