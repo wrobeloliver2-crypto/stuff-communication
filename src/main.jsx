@@ -683,6 +683,7 @@ const DialogThread = ({ d, user, admin = false, onChanged }) => {
 // ── Verwaltung ────────────────────────────────────────────────────────────────────
 const Admin = ({ user, news, tools, dialoge, boot, meineFirmen, onLogout, onChanged }) => {
   const [tab, setTab] = useState('start');
+  const [vorschau, setVorschau] = useState(false);
   const [employees, setEmployees] = useState([]);
   const ladeEmployees = async () => { const r = await MA.mitarbeiter({ firmaId: null }); if (r && !r.error) setEmployees(r.personen || []); };
   useEffect(() => { ladeEmployees(); }, [boot]);
@@ -691,6 +692,17 @@ const Admin = ({ user, news, tools, dialoge, boot, meineFirmen, onLogout, onChan
   const tabs = [['start', 'Start', 'start'], ['news', 'News', 'news'], ['tools', 'Tools & Links', 'tools'], ['post', 'Nachrichten', 'postfach', unread], ['team', 'Mitarbeiter', 'team'], ['audit', 'Protokoll', 'audit']];
   // Leiste unten: höchstens fünf Reiter – Tools und Protokoll liegen hinter „Mehr"
   const mobileTabs = [['start', 'Start', 'start'], ['news', 'News', 'news'], ['post', 'Nachrichten', 'postfach', unread], ['team', 'Team', 'team'], ['mehr', 'Mehr', 'mehr', 0, ['tools', 'audit']]];
+  // Vorschau: das Portal genau so sehen, wie es Mitarbeiter sehen (gleiche Daten, Mitarbeiter-Ansicht)
+  if (vorschau) return (
+    <div>
+      <div style={{ background: T.roseDark, color: '#fff', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 12, fontSize: 13.5 }}>
+        <span style={{ flex: 1 }}><strong>Vorschau</strong> – so sieht ein Mitarbeiter das Portal</span>
+        <button onClick={() => setVorschau(false)} className="pp-btn pp-btn--klein" style={{ background: '#fff', color: T.roseDark, border: 'none' }}>Zurück zur Verwaltung</button>
+      </div>
+      <button onClick={() => setVorschau(false)} className="pp-btn pp-btn--klein" style={{ position: 'fixed', right: 12, bottom: 'calc(var(--pp-nav-h, 60px) + 16px + env(safe-area-inset-bottom))', zIndex: 95, background: T.roseDark, color: '#fff', border: 'none', boxShadow: '0 4px 14px rgba(0,0,0,.18)' }}>Vorschau beenden</button>
+      <Employee user={user} news={news} tools={tools} dialoge={dialoge} ungelesen={{ nachrichten: 0, dialoge: unread }} meineFirmen={meineFirmen} onLogout={onLogout} onChanged={onChanged} />
+    </div>
+  );
   return (
     <div className="pp-seite">
       <Kopf user={user} onLogout={onLogout} admin right={<span className="pp-tag pp-tag--rose">Verwaltung</span>} />
@@ -703,6 +715,7 @@ const Admin = ({ user, news, tools, dialoge, boot, meineFirmen, onLogout, onChan
             <AppTiles tools={meineApps(tools, meineFirmen)} firmaId={user.firmaId}>
               <NewsTile neu={neueNews} onClick={() => setTab('news')} />
               <MeinBereichTile neu={unread} onClick={() => setTab('post')} />
+              <Kachel onClick={() => setVorschau(true)} icon={<span className="pp-kachel__icon pp-kachel__icon--rose"><NavIcon name="postfach" /></span>} titel="Vorschau" tag={<span className="pp-tag pp-tag--rose">Verwaltung</span>} text="Portal so sehen, wie es das Team sieht" />
             </AppTiles>
             {unread > 0 && (
               <div style={{ marginTop: 28 }}>
@@ -718,10 +731,11 @@ const Admin = ({ user, news, tools, dialoge, boot, meineFirmen, onLogout, onChan
             <div className="pp-kacheln">
               <Kachel onClick={() => setTab('tools')} icon={<span className="pp-kachel__icon"><NavIcon name="tools" /></span>} titel="Tools & Links" text="Apps und Links für die Kacheln pflegen" />
               <Kachel onClick={() => setTab('audit')} icon={<span className="pp-kachel__icon"><NavIcon name="audit" /></span>} titel="Protokoll" text="Logins, Nachrichten und Lesebestätigungen" />
+              <Kachel onClick={() => setVorschau(true)} icon={<span className="pp-kachel__icon"><NavIcon name="postfach" /></span>} titel="Vorschau als Mitarbeiter" text="Portal so sehen, wie es das Team sieht" />
             </div>
           </div>
         )}
-        {tab === 'news' && <AdminNews news={news} onChanged={onChanged} />}
+        {tab === 'news' && <AdminNews news={news} onChanged={onChanged} onVorschau={() => setVorschau(true)} />}
         {tab === 'tools' && <AdminTools tools={tools} onChanged={onChanged} />}
         {tab === 'post' && <AdminPost user={user} employees={employees} dialoge={dialoge} onChanged={onChanged} />}
         {tab === 'team' && <AdminTeam employees={employees} boot={boot} onEmployeesChanged={ladeEmployees} />}
@@ -739,7 +753,7 @@ const EditHinweis = ({ text, onCancel }) => (
   </div>
 );
 
-const AdminNews = ({ news, onChanged }) => {
+const AdminNews = ({ news, onChanged, onVorschau }) => {
   const [editId, setEditId] = useState(null);
   const [firm, setFirm] = useState('beide');
   const [title, setTitle] = useState(''); const [text, setText] = useState('');
@@ -840,6 +854,7 @@ const AdminNews = ({ news, onChanged }) => {
         <label className="pp-check" style={chkS}><input type="checkbox" checked={wichtig} onChange={e => setWichtig(e.target.checked)} /> Wichtig (wird oben angeheftet)</label>
         <label className="pp-check" style={{ marginBottom: 16 }}><input type="checkbox" checked={mail} onChange={e => setMail(e.target.checked)} /> Zusätzlich per E-Mail an alle mit Adresse senden</label>
         <button className="pp-btn pp-btn--breit" disabled={busy} onClick={submit}>{editId ? 'Änderungen speichern' : 'Veröffentlichen'}</button>
+        {onVorschau && <button className="pp-btn pp-btn--sekundaer pp-btn--breit" style={{ marginTop: 8 }} onClick={onVorschau}>Vorschau: so sieht es das Team</button>}
       </div>
       <div className="pp-karte">
         <Label>Veröffentlicht ({aktive.length})</Label>
