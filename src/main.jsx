@@ -418,8 +418,8 @@ const alleApps = (tools) => tools.filter(t => t.aktiv && t.url && t.kuerzel !== 
 const appLink = (t) => t.url ? t.url + (MA && MA.token ? '#ma=' + encodeURIComponent(MA.token) : '') : null;
 
 // App-Icons (zentral im Mitarbeiter-Dienst): Zeiterfassung in Physio-Grün oder Pilates-Rosé,
-// je nach Firma der angemeldeten Person; Intranet, Login und Fahrtenbuch haben je ein Icon.
-const ICON_APPS = ['zeiterfassung', 'intranet', 'login', 'fahrtenbuch'];
+// je nach Firma der angemeldeten Person; alle übrigen Apps haben je ein eigenes Icon (Stand 17.10.2026).
+const ICON_APPS = ['zeiterfassung', 'intranet', 'login', 'fahrtenbuch', 'anfragen', 'belegerfassung', 'osteo', 'mailtodos', 'opabgleich', 'finanzen', 'trainerapp'];
 const appIcon = (kuerzel, firmaId) => {
   if (!ICON_APPS.includes(kuerzel)) return null;
   const name = kuerzel === 'zeiterfassung' ? (firmaId === 2 ? 'zeiterfassung-pilates' : 'zeiterfassung-physio') : kuerzel;
