@@ -206,6 +206,7 @@ const NavIcon = ({ name }) => {
     case 'postfach': return <svg viewBox="0 0 24 24" {...s}><circle cx="12" cy="8" r="4" /><path d="M4.5 20a7.5 7.5 0 0 1 15 0z" /></svg>;
     case 'tools': return <svg viewBox="0 0 24 24" {...s}><path d="M10 13a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1.5 1.5" /><path d="M14 11a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1.5-1.5" /></svg>;
     case 'team': return <svg viewBox="0 0 24 24" {...s}><circle cx="9" cy="8" r="3.5" /><circle cx="17" cy="10" r="2.5" /><path d="M2.5 20a6.5 6.5 0 0 1 13 0z" /><path d="M16 20h5.5a4.5 4.5 0 0 0-5-4.4" /></svg>;
+    case 'personal': return <svg viewBox="0 0 24 24" {...s}><rect x="3" y="5" width="18" height="14" rx="2.5" /><circle cx="8.5" cy="11" r="2" /><path d="M5.5 16a3 3 0 0 1 6 0M14 10h4M14 13h3" /></svg>;
     case 'audit': return <svg viewBox="0 0 24 24" {...s}><path d="M8 6h13M8 12h13M8 18h13" /><circle cx="3.5" cy="6" r="1" fill="currentColor" stroke="none" /><circle cx="3.5" cy="12" r="1" fill="currentColor" stroke="none" /><circle cx="3.5" cy="18" r="1" fill="currentColor" stroke="none" /></svg>;
     case 'mehr': return <svg viewBox="0 0 24 24" {...s}><circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" /><circle cx="19" cy="12" r="1.6" fill="currentColor" stroke="none" /></svg>;
     default: return <svg viewBox="0 0 24 24" {...s}><circle cx="12" cy="12" r="8" /></svg>;
@@ -736,9 +737,13 @@ const Admin = ({ user, news, tools, dialoge, boot, meineFirmen, onLogout, onChan
   useEffect(() => { ladeEmployees(); }, [boot]);
   const unread = dialoge.filter(d => d.ungelesen > 0).length;
   const neueNews = news.filter(n => n.aktiv !== false && !n.gelesen).length;
-  const tabs = [['start', 'Start', 'start'], ['news', 'News', 'news'], ['tools', 'Apps & Links', 'tools'], ['post', 'Nachrichten', 'postfach', unread], ['team', 'Mitarbeiter', 'team'], ['audit', 'Protokoll', 'audit']];
-  // Leiste unten: höchstens fünf Reiter – Tools und Protokoll liegen hinter „Mehr"
-  const mobileTabs = [['start', 'Start', 'start'], ['news', 'News', 'news'], ['post', 'Nachrichten', 'postfach', unread], ['team', 'Team', 'team'], ['mehr', 'Mehr', 'mehr', 0, ['tools', 'audit']]];
+  // Personal-Übersicht nur für die Rolle admin (Genehmiger sehen die Verwaltung, aber keine Personaldaten);
+  // der Dienst prüft das zusätzlich serverseitig.
+  const personal = user.rolle === 'admin';
+  const tabs = [['start', 'Start', 'start'], ['news', 'News', 'news'], ['tools', 'Apps & Links', 'tools'], ['post', 'Nachrichten', 'postfach', unread], ['team', 'Mitarbeiter', 'team'], ...(personal ? [['personal', 'Personal', 'personal']] : []), ['audit', 'Protokoll', 'audit']];
+  // Leiste unten: höchstens fünf Reiter – Tools, Personal und Protokoll liegen hinter „Mehr"
+  const mobileTabs = [['start', 'Start', 'start'], ['news', 'News', 'news'], ['post', 'Nachrichten', 'postfach', unread], ['team', 'Team', 'team'], ['mehr', 'Mehr', 'mehr', 0, ['tools', 'audit', 'personal']]];
+  const personalKachel = <Kachel onClick={() => setTab('personal')} icon={<span className="pp-kachel__icon"><img src={ICON_BASE + 'personal.svg'} alt="" /></span>} titel="Personal" tag={<span className="pp-tag pp-tag--rose">Verwaltung</span>} text="Stammdaten, Verträge und Personalfragebogen aller Personen" />;
   // Vorschau: das Portal genau so sehen, wie es Mitarbeiter sehen (gleiche Daten, Mitarbeiter-Ansicht).
   // Reine Ansicht – es werden keine Lesebestätigungen gesetzt und nichts gesendet.
   if (vorschau) return (
@@ -764,6 +769,7 @@ const Admin = ({ user, news, tools, dialoge, boot, meineFirmen, onLogout, onChan
             <AppTiles tools={alleApps(tools)} firmaId={user.firmaId}>
               <NewsTile neu={neueNews} onClick={() => setTab('news')} />
               <MeinBereichTile neu={unread} onClick={() => setTab('post')} />
+              {personal && personalKachel}
               <Kachel onClick={() => setVorschau(true)} icon={<span className="pp-kachel__icon pp-kachel__icon--rose"><NavIcon name="postfach" /></span>} titel="Vorschau" tag={<span className="pp-tag pp-tag--rose">Verwaltung</span>} text="Portal so sehen, wie es das Team sieht" />
             </AppTiles>
             {unread > 0 && (
@@ -779,6 +785,7 @@ const Admin = ({ user, news, tools, dialoge, boot, meineFirmen, onLogout, onChan
             <Label>Mehr</Label>
             <div className="pp-kacheln">
               <Kachel onClick={() => setTab('tools')} icon={<span className="pp-kachel__icon"><NavIcon name="tools" /></span>} titel="Apps & Links" text="Alle Apps öffnen und ihre Einträge pflegen" />
+              {personal && personalKachel}
               <Kachel onClick={() => setTab('audit')} icon={<span className="pp-kachel__icon"><NavIcon name="audit" /></span>} titel="Protokoll" text="Logins, Nachrichten und Lesebestätigungen" />
               <Kachel onClick={() => setVorschau(true)} icon={<span className="pp-kachel__icon"><NavIcon name="postfach" /></span>} titel="Vorschau als Mitarbeiter" text="Portal so sehen, wie es das Team sieht" />
             </div>
@@ -788,6 +795,7 @@ const Admin = ({ user, news, tools, dialoge, boot, meineFirmen, onLogout, onChan
         {tab === 'tools' && <AdminTools tools={tools} onChanged={onChanged} />}
         {tab === 'post' && <AdminPost user={user} employees={employees} dialoge={dialoge} onChanged={onChanged} />}
         {tab === 'team' && <AdminTeam employees={employees} boot={boot} onEmployeesChanged={ladeEmployees} />}
+        {tab === 'personal' && personal && <AdminPersonal />}
         {tab === 'audit' && <AdminAudit />}
       </div>
     </div>
@@ -1238,6 +1246,314 @@ const AdminTeam = ({ employees, boot, onEmployeesChanged }) => {
           {inviteFor === e.mitarbeiterId && <div style={{ padding: '12px 0' }}><InvitePanel emp={e} mode={inviteMode} onClose={() => setInviteFor(null)} /></div>}
         </React.Fragment>
       ))}
+    </div>
+  );
+};
+
+// ── Personal (nur admin): alle Personen, Stammdaten, Verträge, Lohn, Fragebogen ─────────────
+// Daten kommen aus /.netlify/functions/personal; der Dienst liefert keine Inhalte des
+// Personalfragebogens (Steuer-ID, Bank …), nur Status und Link auf die Akte.
+const STANDORTE = [['stockelsdorf', 'Stockelsdorf'], ['bad_schwartau', 'Bad Schwartau']];
+const standortName = (s) => (STANDORTE.find(([k]) => k === s) || [, ''])[1];
+const FB_STATUS = {
+  angefordert: ['angefordert', 'pp-badge--offen'], entwurf: ['in Bearbeitung', 'pp-badge--offen'],
+  eingereicht: ['eingereicht', ''], abgeschlossen: ['abgeschlossen', 'pp-badge--ok'],
+};
+const FbBadge = ({ fb }) => { const [l, c] = fb ? FB_STATUS[fb.status] || [fb.status, 'pp-badge--neutral'] : ['kein Fragebogen', 'pp-badge--neutral']; return <span className={'pp-badge ' + c}>{l}</span>; };
+const tagDE = (s) => s ? String(s).slice(0, 10).split('-').reverse().join('.') : '–';
+const euro = (n) => n == null ? '–' : n.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' });
+const stunden = (n) => n == null ? '–' : n.toLocaleString('de-DE', { maximumFractionDigits: 2 }) + ' Std.';
+const MONATE = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+const firmenText = (p) => p.firmen.map(f => f.firmaId === 2 ? 'Pilates Company' : 'PhysioPro').join(' + ');
+const standorteText = (p) => [...new Set(p.firmen.map(f => standortName(f.standort)).filter(Boolean))].join(', ') || 'kein Standort';
+const PERSONAL_FEHLER = {
+  email_format: 'Bitte eine gültige E-Mail-Adresse eingeben.', email_vergeben: 'Diese E-Mail-Adresse ist schon bei einer anderen Person hinterlegt.',
+  telefon_format: 'Die Telefonnummer darf nur Ziffern, Leerzeichen, +, -, / und Klammern enthalten.', notizen_zu_lang: 'Die Notizen sind zu lang (höchstens 4000 Zeichen).',
+  datum_ungueltig: 'Bitte ein gültiges Datum eingeben.', austritt_vor_eintritt: 'Der Austritt liegt vor dem Eintritt.',
+  standort_unbekannt: 'Unbekannter Standort.', behandlungsanteil_0_bis_1: 'Der Behandlungsanteil muss zwischen 0 und 100 % liegen.',
+  nicht_selbst: 'Du kannst dich nicht selbst deaktivieren.', nicht_erlaubt: 'Nur für die Verwaltung (Rolle Admin).',
+};
+const personalFehler = (r) => !r ? 'Keine Verbindung zum Mitarbeiter-Dienst.' : PERSONAL_FEHLER[r.error] || 'Nicht möglich (' + r.error + ').';
+
+// Zwei Spalten Beschriftung/Wert – am Handy untereinander
+const Wert = ({ label, children }) => (
+  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '9px 0', borderBottom: '1px solid ' + T.lineSoft, fontSize: 14 }}>
+    <span style={{ color: T.faint, flexShrink: 0 }}>{label}</span>
+    <span style={{ color: T.ink, textAlign: 'right', minWidth: 0, overflowWrap: 'anywhere' }}>{children}</span>
+  </div>
+);
+
+const AdminPersonal = () => {
+  const [filter, setFilter] = useState({ suche: '', firmaId: '', status: 'aktiv', standort: '' });
+  const [liste, setListe] = useState(null);
+  const [fehler, setFehler] = useState('');
+  const [offen, setOffen] = useState(null); // mitarbeiter_id
+  const set = (k, v) => setFilter(f => ({ ...f, [k]: v }));
+  useEffect(() => {
+    if (!MA.personalListe) { setFehler('Der Mitarbeiter-Dienst ist noch nicht aktualisiert – bitte später erneut versuchen.'); return; }
+    let stop = false;
+    const t = setTimeout(async () => {
+      const r = await MA.personalListe({ ...filter, firmaId: filter.firmaId ? Number(filter.firmaId) : null });
+      if (stop) return;
+      if (!r || r.error) { setFehler(personalFehler(r)); setListe([]); return; }
+      setFehler(''); setListe(r.personen || []);
+    }, filter.suche ? 300 : 0);
+    return () => { stop = true; clearTimeout(t); };
+  }, [filter]);
+
+  if (offen) return <PersonalDetail id={offen} onBack={() => { setOffen(null); setFilter(f => ({ ...f })); }} />;
+  const sel = { padding: '0 38px 0 12px' };
+  return (
+    <div>
+      <Label>Personal{liste ? ` (${liste.length})` : ''}</Label>
+      <p className="pp-sek" style={{ margin: '-4px 0 14px' }}>Alle Personen aus der Mitarbeiter-Datenbank. Tippe auf eine Person für Stammdaten, Verträge, Lohn und Personalfragebogen.</p>
+      <div className="pp-karte" style={{ marginBottom: 14, paddingBottom: 4 }}>
+        <Feld label="Suche"><input className="pp-input" type="search" placeholder="Name, E-Mail, Telefon, Personalnummer" value={filter.suche} onChange={e => set('suche', e.target.value)} autoComplete="off" /></Feld>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0 10px' }}>
+          <Feld label="Firma"><select className="pp-select" style={sel} value={filter.firmaId} onChange={e => set('firmaId', e.target.value)}><option value="">Beide</option>{FIRMA_OPTS.map(([id, l]) => <option key={id} value={id}>{l}</option>)}</select></Feld>
+          <Feld label="Status"><select className="pp-select" style={sel} value={filter.status} onChange={e => set('status', e.target.value)}><option value="aktiv">Aktiv</option><option value="inaktiv">Ausgetreten</option><option value="alle">Alle</option></select></Feld>
+          <Feld label="Standort"><select className="pp-select" style={sel} value={filter.standort} onChange={e => set('standort', e.target.value)}><option value="">Alle</option>{STANDORTE.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Feld>
+        </div>
+      </div>
+      {fehler && <div style={{ marginBottom: 14 }}><Hinweis art="fehler" titel={fehler} /></div>}
+      {!liste && !fehler && <p className="pp-meta">Wird geladen …</p>}
+      {liste && liste.length === 0 && !fehler && <Empty text="Keine Person passt zu den Filtern." />}
+      {liste && liste.length > 0 && <>
+        {/* Handy: Karten */}
+        <div className="pp-liste pp-liste--tabelle">
+          {liste.map(p => (
+            <button key={p.id} type="button" className="pp-zeile" onClick={() => setOffen(p.id)} style={{ textAlign: 'left', font: 'inherit', color: 'inherit', cursor: 'pointer', opacity: p.aktiv ? 1 : .7 }}>
+              <span className="pp-zeile__kopf">
+                <span className="pp-zeile__titel">{p.name}</span>
+                <FbBadge fb={p.fragebogen} />
+              </span>
+              <span className="pp-zeile__sub">
+                <span>{firmenText(p)} · {standorteText(p)}</span>
+                {!p.aktiv && <span className="pp-tag">ausgetreten</span>}
+              </span>
+            </button>
+          ))}
+        </div>
+        {/* Ab 1024 px: Tabelle */}
+        <div className="pp-tabelle">
+          <table>
+            <thead><tr><th>Name</th><th>Firma</th><th>Rolle</th><th>Standort</th><th>Eintritt</th><th>Std./Woche</th><th>Fragebogen</th></tr></thead>
+            <tbody>
+              {liste.map(p => (
+                <tr key={p.id} onClick={() => setOffen(p.id)} style={{ cursor: 'pointer', opacity: p.aktiv ? 1 : .6 }}>
+                  <td>{p.name}{!p.aktiv && <span className="pp-tag" style={{ marginLeft: 8 }}>ausgetreten</span>}</td>
+                  <td>{p.firmen.map(f => <span key={f.mitarbeiterFirmaId} style={{ marginRight: 4 }}><FirmTag firm={firmKey(f.firmaId)} /></span>)}</td>
+                  <td>{[...new Set(p.firmen.map(f => f.anzeigeRolle).filter(Boolean))].join(', ') || '–'}</td>
+                  <td>{standorteText(p)}</td>
+                  <td>{p.firmen.map(f => tagDE(f.eintritt)).join(' / ')}</td>
+                  <td>{p.firmen.map(f => f.wochenstunden == null ? '–' : f.wochenstunden.toLocaleString('de-DE')).join(' / ')}</td>
+                  <td><FbBadge fb={p.fragebogen} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </>}
+    </div>
+  );
+};
+
+const PersonalDetail = ({ id, onBack }) => {
+  const [p, setP] = useState(null);
+  const [fehler, setFehler] = useState('');
+  const [edit, setEdit] = useState(null); // Formularstand im Bearbeiten-Modus
+  const [busy, setBusy] = useState(false);
+  const [gespeichert, setGespeichert] = useState(false);
+  useEffect(() => { (async () => {
+    const r = await MA.personalDetail(id);
+    if (!r || r.error) return setFehler(personalFehler(r));
+    setP(r.person);
+  })(); window.scrollTo(0, 0); }, [id]);
+
+  const bearbeiten = () => {
+    setGespeichert(false); setFehler('');
+    setEdit({
+      email: p.stammdaten.email, telefon: p.stammdaten.telefon, notizen: p.stammdaten.notizen,
+      firmen: p.firmen.map(f => ({ mitarbeiterFirmaId: f.mitarbeiterFirmaId, firmaId: f.firmaId, eintritt: f.eintritt || '', austritt: f.austritt || '', aktiv: f.aktiv, standort: f.standort || '',
+        anteil: f.behandlungsanteil == null ? '' : String(Math.round(f.behandlungsanteil * 100)) })),
+    });
+  };
+  const setE = (k, v) => setEdit(e => ({ ...e, [k]: v }));
+  const setF = (i, k, v) => setEdit(e => ({ ...e, firmen: e.firmen.map((f, j) => j === i ? { ...f, [k]: v } : f) }));
+  const speichern = async () => {
+    const anteil = edit.firmen.map(f => f.anteil.trim() === '' ? '' : Number(f.anteil.replace(',', '.')));
+    if (anteil.some(a => a !== '' && !(a >= 0 && a <= 100))) return setFehler(PERSONAL_FEHLER.behandlungsanteil_0_bis_1);
+    setBusy(true); setFehler('');
+    const r = await MA.personalSpeichern({
+      id, person: { email: edit.email, telefon: edit.telefon, notizen: edit.notizen },
+      firmen: edit.firmen.map((f, i) => ({ mitarbeiterFirmaId: f.mitarbeiterFirmaId, eintritt: f.eintritt, austritt: f.austritt, aktiv: f.aktiv, standort: f.standort,
+        behandlungsanteil: anteil[i] === '' ? '' : anteil[i] / 100 })),
+    });
+    setBusy(false);
+    if (!r || r.error) return setFehler(personalFehler(r));
+    setP(r.person); setEdit(null); setGespeichert(r.geaendert > 0 ? 'Gespeichert – ' + r.geaendert + (r.geaendert === 1 ? ' Änderung' : ' Änderungen') + ' protokolliert.' : 'Keine Änderungen.');
+  };
+
+  const zurueck = <button onClick={onBack} className="pp-zurueck" style={{ marginLeft: -12, marginBottom: 6 }}>← Zur Liste</button>;
+  if (!p) return <div>{zurueck}{fehler ? <Hinweis art="fehler" titel={fehler} /> : <p className="pp-meta">Wird geladen …</p>}</div>;
+  const s = p.stammdaten;
+  const heute = new Date().toISOString().slice(0, 10);
+  const fbLink = (url) => url + (MA.token ? '&ma=' + encodeURIComponent(MA.token) : '');
+  const mehrereFirmen = p.firmen.length > 1;
+  const firmaVon = (mfId) => p.firmen.find(f => f.mitarbeiterFirmaId === mfId);
+  const FELD_NAME = { email: 'E-Mail', telefon: 'Telefon', notizen: 'Notizen', eintritt: 'Eintritt', austritt: 'Austritt', aktiv: 'aktiv', standort: 'Standort', behandlungsanteil: 'Behandlungsanteil' };
+  const sel = { padding: '0 38px 0 12px' };
+
+  return (
+    <div>
+      {zurueck}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+        <div className="pp-avatar" style={{ width: 48, height: 48, fontSize: 16, background: s.farbe, color: '#fff' }}>{s.initialen}</div>
+        <div style={{ minWidth: 0 }}>
+          <h1 className="pp-h2">{s.name}</h1>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+            {p.firmen.map(f => <FirmTag key={f.mitarbeiterFirmaId} firm={firmKey(f.firmaId)} />)}
+            {s.aktiv ? <span className="pp-tag pp-tag--gruen">aktiv</span> : <span className="pp-tag">ausgetreten</span>}
+          </div>
+        </div>
+      </div>
+      {gespeichert && <div style={{ marginBottom: 12 }}><Hinweis titel={gespeichert} /></div>}
+
+      {/* ── Stammdaten ── */}
+      <div className="pp-karte">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+          <Label style={{ margin: 0, flex: 1 }}>Stammdaten</Label>
+          {!edit && <button className="pp-btn pp-btn--leise" onClick={bearbeiten}>Bearbeiten</button>}
+        </div>
+        {!edit ? <>
+          <Wert label="E-Mail">{s.email ? <a href={'mailto:' + s.email}>{s.email}</a> : '–'}</Wert>
+          <Wert label="Telefon">{s.telefon ? <a href={'tel:' + s.telefon.replace(/[^\d+]/g, '')}>{s.telefon}</a> : '–'}</Wert>
+          {s.geburtsdatum && <Wert label="Geburtsdatum">{tagDE(s.geburtsdatum)}</Wert>}
+          <Wert label="Kontakt bestätigt">{s.kontaktBestaetigtAm ? fmtDate(s.kontaktBestaetigtAm) : 'noch nicht'}</Wert>
+          {p.firmen.map(f => (
+            <div key={f.mitarbeiterFirmaId} style={{ marginTop: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                <FirmTag firm={firmKey(f.firmaId)} />{!f.aktiv && <span className="pp-tag">inaktiv</span>}
+              </div>
+              <Wert label="Tätigkeit">{f.anzeigeRolle || '–'}{f.beschaeftigungsart ? ' · ' + f.beschaeftigungsart : ''}</Wert>
+              <Wert label="Rolle in den Apps">{(ROLLEN.find(([k]) => k === f.rolle) || [, f.rolle])[1]}</Wert>
+              <Wert label="Personalnummer">{f.personalnummer ?? '–'}</Wert>
+              <Wert label="Standort">{standortName(f.standort) || '–'}</Wert>
+              <Wert label="Eintritt / Austritt">{tagDE(f.eintritt)} / {tagDE(f.austritt)}</Wert>
+              <Wert label="Arbeitstage">{f.arbeitstageProWoche != null ? f.arbeitstageProWoche.toLocaleString('de-DE') + ' pro Woche' : '–'}{f.arbeitstage ? ' (' + f.arbeitstage + ')' : ''}</Wert>
+              <Wert label="Behandlungsanteil">{f.behandlungsanteil == null ? '–' : Math.round(f.behandlungsanteil * 100) + ' %'}</Wert>
+              {f.genehmiger && <Wert label="Genehmigt durch">{f.genehmiger}</Wert>}
+            </div>
+          ))}
+          <span className="pp-feld__label" style={{ display: 'block', margin: '14px 0 6px' }}>Notizen</span>
+          <p style={{ margin: 0, fontSize: 14, color: s.notizen ? T.ink : T.faint, whiteSpace: 'pre-wrap' }}>{s.notizen || 'Keine Notizen.'}</p>
+        </> : <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0 12px', marginTop: 8 }}>
+            <Feld label="E-Mail"><input className="pp-input" type="email" value={edit.email} onChange={e => setE('email', e.target.value)} autoComplete="off" /></Feld>
+            <Feld label="Telefon"><input className="pp-input" type="tel" value={edit.telefon} onChange={e => setE('telefon', e.target.value)} autoComplete="off" /></Feld>
+          </div>
+          {edit.firmen.map((f, i) => (
+            <div key={f.mitarbeiterFirmaId} style={{ border: '1px solid ' + T.line, borderRadius: 12, padding: '12px 14px', marginBottom: 12, background: T.bg }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <FirmTag firm={firmKey(f.firmaId)} /><span style={{ flex: 1 }} />
+                <label className="pp-check" style={{ margin: 0 }}><input type="checkbox" checked={f.aktiv} onChange={e => setF(i, 'aktiv', e.target.checked)} /> aktiv</label>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0 12px' }}>
+                <Feld label="Eintritt"><input className="pp-input" type="date" value={f.eintritt} onChange={e => setF(i, 'eintritt', e.target.value)} /></Feld>
+                <Feld label="Austritt"><input className="pp-input" type="date" value={f.austritt} onChange={e => setF(i, 'austritt', e.target.value)} /></Feld>
+                <Feld label="Standort"><select className="pp-select" style={sel} value={f.standort} onChange={e => setF(i, 'standort', e.target.value)}><option value="">kein Standort</option>{STANDORTE.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Feld>
+                <Feld label="Behandlungsanteil (%)"><input className="pp-input" inputMode="decimal" value={f.anteil} onChange={e => setF(i, 'anteil', e.target.value.replace(/[^\d,.]/g, ''))} /></Feld>
+              </div>
+              {!f.aktiv && <p className="pp-meta" style={{ margin: 0 }}>Inaktiv: Die Person kann sich für {f.firmaId === 2 ? 'Pilates Company' : 'PhysioPro'} nicht mehr anmelden. Ohne Austrittsdatum wird heute eingetragen.</p>}
+            </div>
+          ))}
+          <Feld label="Notizen (nur für die Verwaltung)"><textarea className="pp-textarea" maxLength={4000} value={edit.notizen} onChange={e => setE('notizen', e.target.value)} /></Feld>
+          {fehler && <div style={{ marginBottom: 12 }}><Hinweis art="fehler" titel={fehler} /></div>}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button className="pp-btn" disabled={busy} onClick={speichern}>{busy ? 'Wird gespeichert …' : 'Speichern'}</button>
+            <button className="pp-btn pp-btn--leise" style={{ height: 52 }} onClick={() => { setEdit(null); setFehler(''); }}>Abbrechen</button>
+          </div>
+        </>}
+        {p.aenderungen.length > 0 && !edit && (
+          <details style={{ marginTop: 14 }}>
+            <summary className="pp-meta" style={{ cursor: 'pointer', minHeight: 32 }}>Änderungsprotokoll ({p.aenderungen.length})</summary>
+            {p.aenderungen.map((a, i) => (
+              <p key={i} style={{ margin: '8px 0 0', fontSize: 13, color: T.muted, lineHeight: 1.5 }}>
+                <span className="pp-meta">{fmtDateTime(a.am)} · {a.von}</span><br />
+                {FELD_NAME[a.feld] || a.feld}{mehrereFirmen && a.mitarbeiterFirmaId && firmaVon(a.mitarbeiterFirmaId) ? ' (' + (firmaVon(a.mitarbeiterFirmaId).firmaId === 2 ? 'Pilates' : 'PhysioPro') + ')' : ''}: {a.feld === 'notizen' ? 'geändert' : <>{a.alt || '–'} → <strong style={{ color: T.ink }}>{a.neu || '–'}</strong></>}
+              </p>
+            ))}
+          </details>
+        )}
+      </div>
+
+      {/* ── Verträge / Stunden ── */}
+      <div className="pp-karte">
+        <Label>Verträge / Stunden</Label>
+        {p.vertraege.length === 0 && <p className="pp-meta" style={{ margin: 0 }}>Keine Vertragsdaten hinterlegt.</p>}
+        {p.vertraege.map(v => {
+          const aktuell = v.gueltigAb <= heute && (!v.gueltigBis || v.gueltigBis >= heute);
+          return (
+            <div key={v.id} style={{ padding: '10px 0', borderBottom: '1px solid ' + T.lineSoft }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 15, fontWeight: 600, color: T.ink }}>{stunden(v.wochenstunden)} / Woche</span>
+                {aktuell && <span className="pp-tag pp-tag--gruen">aktuell</span>}
+                {mehrereFirmen && <span style={{ marginLeft: 'auto' }}><FirmTag firm={v.firma === 'pilates' ? 'pilates' : 'physio'} /></span>}
+              </div>
+              <p className="pp-meta" style={{ margin: '3px 0 0' }}>
+                ab {tagDE(v.gueltigAb)}{v.gueltigBis ? ' bis ' + tagDE(v.gueltigBis) : ''}
+                {v.monatsbrutto != null ? ' · ' + euro(v.monatsbrutto) + ' brutto/Monat' : ''}
+                {v.stundenlohn != null ? ' · ' + euro(v.stundenlohn) + '/Std.' : v.stundenlohnEffektiv != null ? ' · ≈ ' + euro(v.stundenlohnEffektiv) + '/Std.' : ''}
+                {v.notiz ? ' · ' + v.notiz : ''}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ── Lohn ── */}
+      <div className="pp-karte">
+        <Label>Lohn (Gesamtbrutto je Monat)</Label>
+        {p.lohn.length === 0 && <p className="pp-meta" style={{ margin: 0 }}>Noch keine Lohnmonate importiert.</p>}
+        {p.lohn.map((l, i) => (
+          <Wert key={i} label={<>{MONATE[l.monat - 1]} {l.jahr}{mehrereFirmen ? ' · ' + (l.firma === 'pilates' ? 'Pilates' : 'PhysioPro') : ''}</>}>{euro(l.gesamtbrutto)}</Wert>
+        ))}
+      </div>
+
+      {/* ── Personalfragebogen ── */}
+      <div className="pp-karte">
+        <Label>Personalfragebogen</Label>
+        {p.fragebogen.length === 0 && <>
+          <p className="pp-sek" style={{ margin: '0 0 12px' }}>Für diese Person wurde noch kein Fragebogen angefordert.</p>
+          <a className="pp-btn pp-btn--leise" style={{ color: T.muted }} href={p.fragebogenSeite + (MA.token ? '#ma=' + encodeURIComponent(MA.token) : '')} target="_blank" rel="noopener noreferrer">Zum Personalfragebogen</a>
+        </>}
+        {p.fragebogen.map(f => (
+          <div key={f.id} style={{ padding: '8px 0', borderBottom: '1px solid ' + T.lineSoft }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
+              <FbBadge fb={f} />{f.firma && <span className="pp-meta">{f.firma}</span>}
+            </div>
+            <p className="pp-meta" style={{ margin: '0 0 10px', lineHeight: 1.6 }}>
+              angefordert {fmtDate(f.erstelltAm)}
+              {f.eingereichtAm ? ' · eingereicht ' + fmtDate(f.eingereichtAm) : ''}
+              {f.abgeschlossenAm ? ' · abgeschlossen ' + fmtDate(f.abgeschlossenAm) : ''}
+              {f.pdfGesendetAm ? ' · PDF gesendet ' + fmtDate(f.pdfGesendetAm) : ''}
+              {!f.abgeschlossenAm && f.geaendertAm ? ' · zuletzt geändert ' + fmtDate(f.geaendertAm) : ''}
+            </p>
+            <a className="pp-btn pp-btn--klein" style={{ color: T.bg }} href={fbLink(f.link)} target="_blank" rel="noopener noreferrer">Fragebogen öffnen</a>
+          </div>
+        ))}
+        <p className="pp-meta" style={{ margin: '10px 0 0' }}>Steuer-ID, Bankverbindung und Sozialversicherung stehen nur im Fragebogen selbst.</p>
+      </div>
+
+      {/* ── Zugänge ── */}
+      <div className="pp-karte">
+        <Label>Zugänge</Label>
+        <Wert label="Letzter Login">{p.letzterLogin ? fmtDateTime(p.letzterLogin.ts) + (p.letzterLogin.app ? ' · ' + p.letzterLogin.app : '') : 'noch nie'}</Wert>
+        {p.zugaenge.map(z => (
+          <Wert key={z.app} label={z.name}>{z.aktiv ? (ROLLEN.find(([k]) => k === z.rolle) || [, z.rolle || 'Zugang'])[1].split(' (')[0] : 'gesperrt'}{z.letzterLogin ? ' · ' + fmtDate(z.letzterLogin) : ''}</Wert>
+        ))}
+        <p className="pp-meta" style={{ margin: '10px 0 0' }}>{p.zugaenge.length ? 'Abweichende Rollen je App. ' : ''}Alle übrigen Apps nutzen die Rolle aus der Firma (siehe Stammdaten).</p>
+      </div>
     </div>
   );
 };
