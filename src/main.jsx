@@ -1271,6 +1271,7 @@ const FB_STATUS = {
 const AE_TITEL = { adresse: 'Adresse', bank: 'Bankverbindung', steuerklasse: 'Steuerklasse', konfession: 'Konfession', kv: 'Krankenversicherung', kinder: 'Kinder' };
 const FbBadge = ({ fb }) => { const [l, c] = fb ? FB_STATUS[fb.status] || [fb.status, 'pp-badge--neutral'] : ['kein Fragebogen', 'pp-badge--neutral']; return <span className={'pp-badge ' + c}>{l}</span>; };
 const tagDE = (s) => s ? String(s).slice(0, 10).split('-').reverse().join('.') : '–';
+const addTag = (iso) => new Date(Date.parse(iso + 'T00:00:00Z') + 864e5).toISOString().slice(0, 10);
 const euro = (n) => n == null ? '–' : n.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' });
 const stunden = (n) => n == null ? '–' : n.toLocaleString('de-DE', { maximumFractionDigits: 2 }) + ' Std.';
 const MONATE = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
@@ -1368,6 +1369,120 @@ const AdminPersonal = () => {
   );
 };
 
+// Stundenbasis je Arbeitsverhältnis: Verlauf, neue Stundenbasis (auch befristet von–bis), Löschen.
+// Befristet: der Dienst legt ab „bis + 1 Tag" automatisch wieder den Stand davor an.
+const VERTRAG_FEHLER = {
+  gueltig_ab_fehlt: 'Bitte angeben, ab wann die Stundenbasis gilt.', datum_ungueltig: 'Bitte ein gültiges Datum eingeben.',
+  bis_vor_ab: 'Das Ende liegt vor dem Beginn.', wochenstunden_ungueltig: 'Wochenstunden zwischen 0 und 60 eingeben.',
+  lohn_ungueltig: 'Bitte einen gültigen Betrag eingeben.', kein_vorheriger_stand: 'Für eine befristete Änderung braucht es einen bisherigen Stand, zu dem danach zurückgekehrt wird. Lege zuerst die normale Stundenbasis an.',
+  firma_unbekannt: 'Arbeitsverhältnis nicht gefunden.',
+};
+const VertragBereich = ({ p, id, onGespeichert }) => {
+  const [form, setForm] = useState(null);
+  const [fehler, setFehler] = useState('');
+  const [busy, setBusy] = useState(false);
+  const heute = new Date().toISOString().slice(0, 10);
+  const mehrereFirmen = p.firmen.length > 1;
+  const aktivFirmen = p.firmen.filter(f => f.aktiv);
+  const firmaName = (mfId) => { const f = p.firmen.find(x => x.mitarbeiterFirmaId === mfId); return f && f.firmaId === 2 ? 'Pilates Company' : 'PhysioPro'; };
+  const stand = (mfId, tag) => p.vertraege.filter(v => v.mitarbeiterFirmaId === mfId && v.gueltigAb <= tag).sort((a, b) => b.gueltigAb.localeCompare(a.gueltigAb))[0] || null;
+  const neu = (mfId) => {
+    const s = stand(mfId, heute) || p.vertraege.find(v => v.mitarbeiterFirmaId === mfId) || null;
+    setFehler('');
+    setForm({ mfId, ab: '', befristet: false, bis: '', std: s ? String(s.wochenstunden).replace('.', ',') : '',
+      art: s && s.monatsbrutto != null && s.stundenlohn == null ? 'brutto' : 'lohn',
+      betrag: s ? String((s.monatsbrutto != null && s.stundenlohn == null ? s.monatsbrutto : s.stundenlohn) ?? '').replace('.', ',') : '', notiz: '' });
+  };
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const speichern = async () => {
+    setFehler('');
+    if (!form.ab) return setFehler(VERTRAG_FEHLER.gueltig_ab_fehlt);
+    if (form.befristet && !form.bis) return setFehler('Bitte angeben, bis wann die Änderung gilt.');
+    if (form.befristet && form.bis < form.ab) return setFehler(VERTRAG_FEHLER.bis_vor_ab);
+    setBusy(true);
+    const r = await MA.personalVertragSetzen({ id, mitarbeiterFirmaId: form.mfId, gueltigAb: form.ab, gueltigBis: form.befristet ? form.bis : null,
+      wochenstunden: form.std, stundenlohn: form.art === 'lohn' ? form.betrag : '', monatsbrutto: form.art === 'brutto' ? form.betrag : '', notiz: form.notiz });
+    setBusy(false);
+    if (!r || r.error) {
+      if (r && r.error === 'ueberschneidung') return setFehler('Im Zeitraum ist schon eine Änderung eingetragen (ab ' + r.daten.map(tagDE).join(', ') + '). Lösche sie zuerst oder wähle einen anderen Zeitraum.');
+      return setFehler(VERTRAG_FEHLER[r && r.error] || personalFehler(r));
+    }
+    setForm(null);
+    onGespeichert(r.person, 'Stundenbasis gespeichert' + (r.rueckkehrAb ? ' – ab ' + tagDE(r.rueckkehrAb) + ' gilt automatisch wieder der bisherige Stand.' : r.rueckkehrUebersprungen ? ' – nach dem Ende gilt der bereits geplante Stand.' : '.'));
+  };
+  const loeschen = async (v) => {
+    const text = v.befristetBis ? 'Befristete Änderung löschen? Die automatische Rückkehr ab ' + tagDE(addTag(v.befristetBis)) + ' wird mit gelöscht.'
+      : v.rueckkehr ? 'Rückkehr-Stand löschen? Dann gilt die befristete Änderung unbefristet weiter.' : 'Stundenbasis ab ' + tagDE(v.gueltigAb) + ' löschen?';
+    if (!confirm(text)) return;
+    const r = await MA.personalVertragLoeschen({ id, vertragId: v.id });
+    if (!r || r.error) return setFehler(personalFehler(r));
+    onGespeichert(r.person, 'Stundenbasis gelöscht.');
+  };
+  const f = form && p.firmen.find(x => x.mitarbeiterFirmaId === form.mfId);
+  return (
+    <div className="pp-karte">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
+        <Label style={{ margin: 0, flex: 1 }}>Verträge / Stunden</Label>
+        {!form && aktivFirmen.map(x => <button key={x.mitarbeiterFirmaId} className="pp-btn pp-btn--leise" onClick={() => neu(x.mitarbeiterFirmaId)}>Neue Stundenbasis{mehrereFirmen ? ' · ' + (x.firmaId === 2 ? 'Pilates' : 'PhysioPro') : ''}</button>)}
+      </div>
+      {form && (
+        <div style={{ border: '1px solid ' + T.line, borderRadius: 12, padding: '12px 14px', margin: '8px 0 14px', background: T.bg }}>
+          <p style={{ margin: '0 0 10px', fontSize: 14.5, fontWeight: 600, color: T.ink }}>Neue Stundenbasis{mehrereFirmen ? ' · ' + firmaName(form.mfId) : ''}</p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0 12px' }}>
+            <Feld label="Gilt ab"><input className="pp-input" type="date" value={form.ab} onChange={e => set('ab', e.target.value)} /></Feld>
+            <Feld label="Wochenstunden"><input className="pp-input" inputMode="decimal" value={form.std} onChange={e => set('std', e.target.value.replace(/[^\d,.]/g, ''))} /></Feld>
+          </div>
+          <label className="pp-check" style={{ marginTop: -4 }}><input type="checkbox" checked={form.befristet} onChange={e => set('befristet', e.target.checked)} /> Nur für einen Zeitraum (befristet)</label>
+          {form.befristet && <>
+            <Feld label="Gilt bis (einschließlich)"><input className="pp-input" type="date" value={form.bis} min={form.ab || undefined} onChange={e => set('bis', e.target.value)} /></Feld>
+            <p className="pp-meta" style={{ margin: '-6px 0 12px' }}>
+              {(() => { const s = form.ab ? stand(form.mfId, form.ab) : null; return s ? 'Danach gilt automatisch wieder ' + stunden(s.wochenstunden) + ' / Woche.' : 'Danach gilt automatisch wieder der bisherige Stand.'; })()}
+            </p>
+          </>}
+          <span className="pp-feld__label" style={{ display: 'block', marginBottom: 8 }}>Vergütung</span>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+            {[['lohn', 'Stundenlohn'], ['brutto', 'Monatsbrutto']].map(([k, l]) => <button key={k} type="button" className={'pp-btn pp-btn--klein' + (form.art === k ? '' : ' pp-btn--leise')} onClick={() => set('art', k)}>{l}</button>)}
+          </div>
+          <Feld label={form.art === 'lohn' ? 'Stundenlohn (€)' : 'Monatsbrutto (€)'}><input className="pp-input" inputMode="decimal" value={form.betrag} onChange={e => set('betrag', e.target.value.replace(/[^\d,.]/g, ''))} /></Feld>
+          <Feld label="Notiz (optional)"><input className="pp-input" maxLength={300} value={form.notiz} placeholder="z. B. Änderungsvertrag vom …" onChange={e => set('notiz', e.target.value)} /></Feld>
+          {f && <p className="pp-meta" style={{ margin: '0 0 12px' }}>Die Zeiterfassung rechnet Urlaub über die Arbeitstage pro Woche (hier: {f.arbeitstageProWoche != null ? f.arbeitstageProWoche.toLocaleString('de-DE') : '–'}), nicht über die Stunden. Ändern sich auch die Tage, passe sie im Reiter „Mitarbeiter" an.</p>}
+          {fehler && <div style={{ marginBottom: 12 }}><Hinweis art="fehler" titel={fehler} /></div>}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button className="pp-btn" disabled={busy} onClick={speichern}>{busy ? 'Wird gespeichert …' : 'Speichern'}</button>
+            <button className="pp-btn pp-btn--leise" style={{ height: 52 }} onClick={() => { setForm(null); setFehler(''); }}>Abbrechen</button>
+          </div>
+        </div>
+      )}
+      {!form && fehler && <div style={{ margin: '8px 0' }}><Hinweis art="fehler" titel={fehler} /></div>}
+      {p.vertraege.length === 0 && <p className="pp-meta" style={{ margin: 0 }}>Keine Vertragsdaten hinterlegt.</p>}
+      {p.vertraege.map(v => {
+        const aktuell = v.gueltigAb <= heute && (!v.gueltigBis || v.gueltigBis >= heute);
+        return (
+          <div key={v.id} style={{ padding: '10px 0', borderBottom: '1px solid ' + T.lineSoft }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 15, fontWeight: 600, color: T.ink }}>{stunden(v.wochenstunden)} / Woche</span>
+              {aktuell && <span className="pp-tag pp-tag--gruen">aktuell</span>}
+              {v.gueltigAb > heute && <span className="pp-tag">geplant</span>}
+              {v.befristetBis && <span className="pp-tag pp-tag--rose">befristet bis {tagDE(v.befristetBis)}</span>}
+              {v.rueckkehr && <span className="pp-tag">nach Befristung</span>}
+              <span style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+                {mehrereFirmen && <FirmTag firm={v.firma === 'pilates' ? 'pilates' : 'physio'} />}
+                {!form && <button className="pp-btn pp-btn--leise pp-btn--gefahr" style={{ height: 32, padding: '0 10px', fontSize: 12.5 }} onClick={() => loeschen(v)}>Löschen</button>}
+              </span>
+            </div>
+            <p className="pp-meta" style={{ margin: '3px 0 0' }}>
+              ab {tagDE(v.gueltigAb)}{v.gueltigBis ? ' bis ' + tagDE(v.gueltigBis) : ''}
+              {v.monatsbrutto != null ? ' · ' + euro(v.monatsbrutto) + ' brutto/Monat' : ''}
+              {v.stundenlohn != null ? ' · ' + euro(v.stundenlohn) + '/Std.' : v.stundenlohnEffektiv != null ? ' · ≈ ' + euro(v.stundenlohnEffektiv) + '/Std.' : ''}
+              {v.notiz ? ' · ' + v.notiz : ''}
+            </p>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 const PersonalDetail = ({ id, onBack }) => {
   const [p, setP] = useState(null);
   const [fehler, setFehler] = useState('');
@@ -1411,7 +1526,7 @@ const PersonalDetail = ({ id, onBack }) => {
   const fbLink = (url) => url + (MA.token ? '&ma=' + encodeURIComponent(MA.token) : '');
   const mehrereFirmen = p.firmen.length > 1;
   const firmaVon = (mfId) => p.firmen.find(f => f.mitarbeiterFirmaId === mfId);
-  const FELD_NAME = { email: 'E-Mail', telefon: 'Telefon', notizen: 'Notizen', eintritt: 'Eintritt', austritt: 'Austritt', aktiv: 'aktiv', standort: 'Standort', behandlungsanteil: 'Behandlungsanteil' };
+  const FELD_NAME = { stundenbasis: 'Stundenbasis', email: 'E-Mail', telefon: 'Telefon', notizen: 'Notizen', eintritt: 'Eintritt', austritt: 'Austritt', aktiv: 'aktiv', standort: 'Standort', behandlungsanteil: 'Behandlungsanteil' };
   const sel = { padding: '0 38px 0 12px' };
 
   return (
@@ -1498,28 +1613,7 @@ const PersonalDetail = ({ id, onBack }) => {
       </div>
 
       {/* ── Verträge / Stunden ── */}
-      <div className="pp-karte">
-        <Label>Verträge / Stunden</Label>
-        {p.vertraege.length === 0 && <p className="pp-meta" style={{ margin: 0 }}>Keine Vertragsdaten hinterlegt.</p>}
-        {p.vertraege.map(v => {
-          const aktuell = v.gueltigAb <= heute && (!v.gueltigBis || v.gueltigBis >= heute);
-          return (
-            <div key={v.id} style={{ padding: '10px 0', borderBottom: '1px solid ' + T.lineSoft }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 15, fontWeight: 600, color: T.ink }}>{stunden(v.wochenstunden)} / Woche</span>
-                {aktuell && <span className="pp-tag pp-tag--gruen">aktuell</span>}
-                {mehrereFirmen && <span style={{ marginLeft: 'auto' }}><FirmTag firm={v.firma === 'pilates' ? 'pilates' : 'physio'} /></span>}
-              </div>
-              <p className="pp-meta" style={{ margin: '3px 0 0' }}>
-                ab {tagDE(v.gueltigAb)}{v.gueltigBis ? ' bis ' + tagDE(v.gueltigBis) : ''}
-                {v.monatsbrutto != null ? ' · ' + euro(v.monatsbrutto) + ' brutto/Monat' : ''}
-                {v.stundenlohn != null ? ' · ' + euro(v.stundenlohn) + '/Std.' : v.stundenlohnEffektiv != null ? ' · ≈ ' + euro(v.stundenlohnEffektiv) + '/Std.' : ''}
-                {v.notiz ? ' · ' + v.notiz : ''}
-              </p>
-            </div>
-          );
-        })}
-      </div>
+      <VertragBereich p={p} id={id} onGespeichert={(person, text) => { setP(person); setGespeichert(text); }} />
 
       {/* ── Lohn ── */}
       <div className="pp-karte">
