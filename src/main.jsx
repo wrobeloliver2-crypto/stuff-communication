@@ -168,6 +168,7 @@ const App = () => {
 
 // ── Bausteine ───────────────────────────────────────────────────────────────
 const ICON_BASE = 'https://mitarbeiter-api.netlify.app/icons/';
+const FRAGEBOGEN_URL = 'https://mitarbeiter-api.netlify.app/personalfragebogen.html';
 
 // Kopfzeile: 56 px, Logos links, Person und Abmelden rechts
 const Kopf = ({ user, onLogout, admin = false, right }) => (
@@ -644,6 +645,14 @@ const Postfach = ({ user, dialoge, onChanged, vorschau = false }) => (
     <Label>Mein Bereich</Label>
     <p className="pp-sek" style={{ margin: '-4px 0 16px' }}>Hier erhältst du persönliche Nachrichten und Dokumente von der Verwaltung. Du kannst direkt antworten und Dateien zurücksenden.</p>
     <WaSchalter vorschau={vorschau} />
+    <a href={FRAGEBOGEN_URL + '#aendern' + (MA && MA.token && !vorschau ? '&ma=' + encodeURIComponent(MA.token) : '')} target="_blank" rel="noopener noreferrer"
+      style={{ display: 'flex', alignItems: 'center', gap: 12, background: '#fff', border: '1px solid ' + T.line, borderRadius: 12, padding: '12px 14px', margin: '0 0 16px', textDecoration: 'none', color: 'inherit' }}>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: T.ink }}>Meine Daten ändern</span>
+        <span className="pp-meta" style={{ display: 'block', marginTop: 2 }}>Neue Adresse, Bankverbindung, Steuerklasse, Krankenkasse oder Kinder an Hanna melden.</span>
+      </span>
+      <span style={{ color: T.green, fontSize: 18 }}>→</span>
+    </a>
     {dialoge.length === 0 && <Empty text="Noch keine Nachrichten in deinem Bereich." />}
     {dialoge.map(d => <DialogThread key={d.id} d={d} user={user} onChanged={onChanged} vorschau={vorschau} />)}
   </div>
@@ -737,9 +746,9 @@ const Admin = ({ user, news, tools, dialoge, boot, meineFirmen, onLogout, onChan
   useEffect(() => { ladeEmployees(); }, [boot]);
   const unread = dialoge.filter(d => d.ungelesen > 0).length;
   const neueNews = news.filter(n => n.aktiv !== false && !n.gelesen).length;
-  // Personal-Übersicht nur für die Rolle admin (Genehmiger sehen die Verwaltung, aber keine Personaldaten);
-  // der Dienst prüft das zusätzlich serverseitig.
-  const personal = user.rolle === 'admin';
+  // Personal-Übersicht nur für Hanna und Oliver: der Dienst setzt user.personal (Rolle admin UND
+  // Freigabeliste PERSONAL_ADMINS) und prüft jeden Aufruf zusätzlich selbst.
+  const personal = !!user.personal;
   const tabs = [['start', 'Start', 'start'], ['news', 'News', 'news'], ['tools', 'Apps & Links', 'tools'], ['post', 'Nachrichten', 'postfach', unread], ['team', 'Mitarbeiter', 'team'], ...(personal ? [['personal', 'Personal', 'personal']] : []), ['audit', 'Protokoll', 'audit']];
   // Leiste unten: höchstens fünf Reiter – Tools, Personal und Protokoll liegen hinter „Mehr"
   const mobileTabs = [['start', 'Start', 'start'], ['news', 'News', 'news'], ['post', 'Nachrichten', 'postfach', unread], ['team', 'Team', 'team'], ['mehr', 'Mehr', 'mehr', 0, ['tools', 'audit', 'personal']]];
@@ -1259,6 +1268,7 @@ const FB_STATUS = {
   angefordert: ['angefordert', 'pp-badge--offen'], entwurf: ['in Bearbeitung', 'pp-badge--offen'],
   eingereicht: ['eingereicht', ''], abgeschlossen: ['abgeschlossen', 'pp-badge--ok'],
 };
+const AE_TITEL = { adresse: 'Adresse', bank: 'Bankverbindung', steuerklasse: 'Steuerklasse', konfession: 'Konfession', kv: 'Krankenversicherung', kinder: 'Kinder' };
 const FbBadge = ({ fb }) => { const [l, c] = fb ? FB_STATUS[fb.status] || [fb.status, 'pp-badge--neutral'] : ['kein Fragebogen', 'pp-badge--neutral']; return <span className={'pp-badge ' + c}>{l}</span>; };
 const tagDE = (s) => s ? String(s).slice(0, 10).split('-').reverse().join('.') : '–';
 const euro = (n) => n == null ? '–' : n.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' });
@@ -1325,7 +1335,7 @@ const AdminPersonal = () => {
             <button key={p.id} type="button" className="pp-zeile" onClick={() => setOffen(p.id)} style={{ textAlign: 'left', font: 'inherit', color: 'inherit', cursor: 'pointer', opacity: p.aktiv ? 1 : .7 }}>
               <span className="pp-zeile__kopf">
                 <span className="pp-zeile__titel">{p.name}</span>
-                <FbBadge fb={p.fragebogen} />
+                <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>{p.aenderungOffen && <span className="pp-badge">Änderung offen</span>}<FbBadge fb={p.fragebogen} /></span>
               </span>
               <span className="pp-zeile__sub">
                 <span>{firmenText(p)} · {standorteText(p)}</span>
@@ -1347,7 +1357,7 @@ const AdminPersonal = () => {
                   <td>{standorteText(p)}</td>
                   <td>{p.firmen.map(f => tagDE(f.eintritt)).join(' / ')}</td>
                   <td>{p.firmen.map(f => f.wochenstunden == null ? '–' : f.wochenstunden.toLocaleString('de-DE')).join(' / ')}</td>
-                  <td><FbBadge fb={p.fragebogen} /></td>
+                  <td><FbBadge fb={p.fragebogen} />{p.aenderungOffen && <span className="pp-badge" style={{ marginLeft: 6 }}>Änderung offen</span>}</td>
                 </tr>
               ))}
             </tbody>
@@ -1539,7 +1549,8 @@ const PersonalDetail = ({ id, onBack }) => {
               {f.pdfGesendetAm ? ' · PDF gesendet ' + fmtDate(f.pdfGesendetAm) : ''}
               {!f.abgeschlossenAm && f.geaendertAm ? ' · zuletzt geändert ' + fmtDate(f.geaendertAm) : ''}
             </p>
-            <a className="pp-btn pp-btn--klein" style={{ color: T.bg }} href={fbLink(f.link)} target="_blank" rel="noopener noreferrer">Fragebogen öffnen</a>
+            {f.aenderungOffen && <div style={{ marginBottom: 10 }}><Hinweis art="warnung" titel={'Änderung gemeldet: ' + f.aenderungOffen.gruppen.map(g => AE_TITEL[g] || g).join(', ')} text={'Am ' + fmtDate(f.aenderungOffen.gemeldetAm) + ' – gilt erst, wenn du sie im Fragebogen übernimmst.'} /></div>}
+            <a className="pp-btn pp-btn--klein" style={{ color: T.bg }} href={fbLink(f.link)} target="_blank" rel="noopener noreferrer">{f.aenderungOffen ? 'Änderung prüfen' : 'Fragebogen öffnen'}</a>
           </div>
         ))}
         <p className="pp-meta" style={{ margin: '10px 0 0' }}>Steuer-ID, Bankverbindung und Sozialversicherung stehen nur im Fragebogen selbst.</p>
