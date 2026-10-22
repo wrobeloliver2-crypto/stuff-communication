@@ -1535,7 +1535,7 @@ const PersonalDetail = ({ id, onBack }) => {
   const fbLink = (url) => url + (MA.token ? '&ma=' + encodeURIComponent(MA.token) : '');
   const mehrereFirmen = p.firmen.length > 1;
   const firmaVon = (mfId) => p.firmen.find(f => f.mitarbeiterFirmaId === mfId);
-  const FELD_NAME = { stundenbasis: 'Stundenbasis', email: 'E-Mail', telefon: 'Telefon', notizen: 'Notizen', eintritt: 'Eintritt', austritt: 'Austritt', aktiv: 'aktiv', standort: 'Standort', behandlungsanteil: 'Behandlungsanteil' };
+  const FELD_NAME = { stundenbasis: 'Stundenbasis', beschaeftigungsart: 'Beschäftigungsart', angelegt: 'Angelegt', email: 'E-Mail', telefon: 'Telefon', notizen: 'Notizen', eintritt: 'Eintritt', austritt: 'Austritt', aktiv: 'aktiv', standort: 'Standort', behandlungsanteil: 'Behandlungsanteil' };
   const sel = { padding: '0 38px 0 12px' };
 
   return (
