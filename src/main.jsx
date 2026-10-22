@@ -36,6 +36,12 @@ const MA = window.MitarbeiterClient ? window.MitarbeiterClient({ app: 'intranet'
 // Direkt aufgerufene Apps leiten hierher um (?von=zeiterfassung): die Kachel wird hervorgehoben,
 // die Startseite bleibt der Einstieg – so sieht jeder zuerst News und Hinweise.
 const VON_APP = (() => { try { const v = new URLSearchParams(location.search).get('von'); if (v) history.replaceState(null, '', location.pathname); return v; } catch (e) { return null; } })();
+// Hilfe-Knopf (MA.hilfe im Mitarbeiter-Client): erscheint nur für die Verwaltung. Die Ansicht geht als
+// Zusammenhang mit jeder Frage mit, damit die Antwort zur aktuellen Seite passt.
+let hilfeAnsicht = 'Start';
+const TAB_NAMEN = { start: 'Start', news: 'News', tools: 'Apps & Links', post: 'Nachrichten', team: 'Mitarbeiter', personal: 'Personal', audit: 'Protokoll', mehr: 'Mehr', postfach: 'Mein Bereich' };
+const hilfeZeigen = () => { if (MA && MA.hilfe) MA.hilfe({ ansicht: () => hilfeAnsicht }); };
+const hilfeWeg = () => { if (MA && MA._hilfe && MA._hilfe.entfernen) MA._hilfe.entfernen(); };
 const persistToken = () => { try { MA && MA.token ? localStorage.setItem(PERSIST_KEY, MA.token) : localStorage.removeItem(PERSIST_KEY); } catch (e) {} };
 
 const UPLOAD_URL = '/.netlify/functions/upload';
@@ -153,10 +159,12 @@ const App = () => {
     persistToken(); setUser(r.user); userRef.current = r.user; setPhase('app');
     return null;
   };
-  const logout = async () => { await MA.logout(); persistToken(); setUser(null); userRef.current = null; setPhase('login'); };
+  const logout = async () => { hilfeWeg(); await MA.logout(); persistToken(); setUser(null); userRef.current = null; setPhase('login'); };
 
   // Firmen der angemeldeten Person (kann in beiden sein) – steuert die App-Kacheln
   const meineFirmen = user ? [...new Set((boot.personen || []).filter(p => p.mitarbeiterId === user.mitarbeiterId).map(p => p.firmaId))] : [];
+
+  useEffect(() => { if (phase === 'app' && user) hilfeZeigen(); }, [phase, user]);
 
   if (phase === 'loading') return <LoadingScreen />;
   if (!MA) return <LoadingScreen text="Der Mitarbeiter-Dienst konnte nicht geladen werden. Bitte Seite neu laden." />;
@@ -741,6 +749,7 @@ const DialogThread = ({ d, user, admin = false, onChanged, vorschau = false }) =
 const Admin = ({ user, news, tools, dialoge, boot, meineFirmen, onLogout, onChanged }) => {
   const [tab, setTab] = useState('start');
   const [vorschau, setVorschau] = useState(false);
+  useEffect(() => { hilfeAnsicht = vorschau ? 'Vorschau als Mitarbeiter' : 'Verwaltung › ' + (TAB_NAMEN[tab] || tab); }, [tab, vorschau]);
   const [employees, setEmployees] = useState([]);
   const ladeEmployees = async () => { const r = await MA.mitarbeiter({ firmaId: null }); if (r && !r.error) setEmployees(r.personen || []); };
   useEffect(() => { ladeEmployees(); }, [boot]);
