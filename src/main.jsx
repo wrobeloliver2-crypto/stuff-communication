@@ -1291,11 +1291,14 @@ const PERSONAL_FEHLER = {
   telefon_format: 'Die Telefonnummer darf nur Ziffern, Leerzeichen, +, -, / und Klammern enthalten.', notizen_zu_lang: 'Die Notizen sind zu lang (höchstens 4000 Zeichen).',
   datum_ungueltig: 'Bitte ein gültiges Datum eingeben.', austritt_vor_eintritt: 'Der Austritt liegt vor dem Eintritt.',
   standort_unbekannt: 'Unbekannter Standort.', behandlungsanteil_0_bis_1: 'Der Behandlungsanteil muss zwischen 0 und 100 % liegen.',
+  vorname_ungueltig: 'Bitte einen Vornamen eingeben.', nachname_ungueltig: 'Bitte einen Nachnamen eingeben.', initialen_ungueltig: 'Das Kürzel besteht aus 1 bis 4 Buchstaben.',
+  personalnummer_vergeben: 'Diese Personalnummer ist in der Firma schon vergeben.', taetigkeit_unbekannt: 'Unbekannte Tätigkeit.',
   nicht_selbst: 'Du kannst dich nicht selbst deaktivieren.', nicht_erlaubt: 'Nur für die Verwaltung (Rolle Admin).',
 };
 const personalFehler = (r) => !r ? 'Keine Verbindung zum Mitarbeiter-Dienst.' : PERSONAL_FEHLER[r.error] || 'Nicht möglich (' + r.error + ').';
 
 // Zwei Spalten Beschriftung/Wert – am Handy untereinander
+const TAETIGKEITEN = [['physiotherapie', 'Physiotherapie'], ['rezeption', 'Rezeption'], ['verwaltung', 'Verwaltung'], ['trainer', 'Trainer:in']];
 const Wert = ({ label, children }) => (
   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '9px 0', borderBottom: '1px solid ' + T.lineSoft, fontSize: 14 }}>
     <span style={{ color: T.faint, flexShrink: 0 }}>{label}</span>
@@ -1508,7 +1511,8 @@ const PersonalDetail = ({ id, onBack }) => {
     setGespeichert(false); setFehler('');
     setEdit({
       email: p.stammdaten.email, telefon: p.stammdaten.telefon, notizen: p.stammdaten.notizen,
-      firmen: p.firmen.map(f => ({ mitarbeiterFirmaId: f.mitarbeiterFirmaId, firmaId: f.firmaId, eintritt: f.eintritt || '', austritt: f.austritt || '', aktiv: f.aktiv, standort: f.standort || '',
+      vorname: p.stammdaten.vorname, nachname: p.stammdaten.nachname, initialen: p.stammdaten.initialen,
+      firmen: p.firmen.map(f => ({ mitarbeiterFirmaId: f.mitarbeiterFirmaId, firmaId: f.firmaId, anzeigeRolle: f.anzeigeRolle || '', personalnummer: f.personalnummer ?? '', taetigkeiten: f.taetigkeiten || [], eintritt: f.eintritt || '', austritt: f.austritt || '', aktiv: f.aktiv, standort: f.standort || '',
         anteil: f.behandlungsanteil == null ? '' : String(Math.round(f.behandlungsanteil * 100)) })),
     });
   };
@@ -1519,8 +1523,8 @@ const PersonalDetail = ({ id, onBack }) => {
     if (anteil.some(a => a !== '' && !(a >= 0 && a <= 100))) return setFehler(PERSONAL_FEHLER.behandlungsanteil_0_bis_1);
     setBusy(true); setFehler('');
     const r = await MA.personalSpeichern({
-      id, person: { email: edit.email, telefon: edit.telefon, notizen: edit.notizen },
-      firmen: edit.firmen.map((f, i) => ({ mitarbeiterFirmaId: f.mitarbeiterFirmaId, eintritt: f.eintritt, austritt: f.austritt, aktiv: f.aktiv, standort: f.standort,
+      id, person: { email: edit.email, telefon: edit.telefon, notizen: edit.notizen, vorname: edit.vorname, nachname: edit.nachname, initialen: edit.initialen },
+      firmen: edit.firmen.map((f, i) => ({ mitarbeiterFirmaId: f.mitarbeiterFirmaId, anzeigeRolle: f.anzeigeRolle, personalnummer: f.personalnummer, taetigkeiten: f.taetigkeiten, eintritt: f.eintritt, austritt: f.austritt, aktiv: f.aktiv, standort: f.standort,
         behandlungsanteil: anteil[i] === '' ? '' : anteil[i] / 100 })),
     });
     setBusy(false);
@@ -1535,7 +1539,7 @@ const PersonalDetail = ({ id, onBack }) => {
   const fbLink = (url) => url + (MA.token ? '&ma=' + encodeURIComponent(MA.token) : '');
   const mehrereFirmen = p.firmen.length > 1;
   const firmaVon = (mfId) => p.firmen.find(f => f.mitarbeiterFirmaId === mfId);
-  const FELD_NAME = { stundenbasis: 'Stundenbasis', beschaeftigungsart: 'Beschäftigungsart', angelegt: 'Angelegt', email: 'E-Mail', telefon: 'Telefon', notizen: 'Notizen', eintritt: 'Eintritt', austritt: 'Austritt', aktiv: 'aktiv', standort: 'Standort', behandlungsanteil: 'Behandlungsanteil' };
+  const FELD_NAME = { stundenbasis: 'Stundenbasis', beschaeftigungsart: 'Beschäftigungsart', angelegt: 'Angelegt', email: 'E-Mail', telefon: 'Telefon', notizen: 'Notizen', eintritt: 'Eintritt', austritt: 'Austritt', aktiv: 'aktiv', standort: 'Standort', behandlungsanteil: 'Behandlungsanteil', vorname: 'Vorname', nachname: 'Nachname', initialen: 'Kürzel', anzeigeRolle: 'Berufsbezeichnung', personalnummer: 'Personalnummer', taetigkeiten: 'Tätigkeiten' };
   const sel = { padding: '0 38px 0 12px' };
 
   return (
@@ -1570,6 +1574,7 @@ const PersonalDetail = ({ id, onBack }) => {
                 <FirmTag firm={firmKey(f.firmaId)} />{!f.aktiv && <span className="pp-tag">inaktiv</span>}
               </div>
               <Wert label="Tätigkeit">{f.anzeigeRolle || '–'}{f.beschaeftigungsart ? ' · ' + f.beschaeftigungsart : ''}</Wert>
+              <Wert label="Tätigkeiten">{(f.taetigkeiten || []).map(t => (TAETIGKEITEN.find(([k]) => k === t) || [, t])[1]).join(', ') || '–'}</Wert>
               <Wert label="Rolle in den Apps">{(ROLLEN.find(([k]) => k === f.rolle) || [, f.rolle])[1]}</Wert>
               <Wert label="Personalnummer">{f.personalnummer ?? '–'}</Wert>
               <Wert label="Standort">{standortName(f.standort) || '–'}</Wert>
@@ -1583,6 +1588,9 @@ const PersonalDetail = ({ id, onBack }) => {
           <p style={{ margin: 0, fontSize: 14, color: s.notizen ? T.ink : T.faint, whiteSpace: 'pre-wrap' }}>{s.notizen || 'Keine Notizen.'}</p>
         </> : <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0 12px', marginTop: 8 }}>
+            <Feld label="Vorname"><input className="pp-input" value={edit.vorname} onChange={e => setE('vorname', e.target.value)} autoComplete="off" /></Feld>
+            <Feld label="Nachname"><input className="pp-input" value={edit.nachname} onChange={e => setE('nachname', e.target.value)} autoComplete="off" /></Feld>
+            <Feld label="Kürzel (Initialen)"><input className="pp-input" maxLength={4} value={edit.initialen} onChange={e => setE('initialen', e.target.value.toUpperCase())} autoComplete="off" /></Feld>
             <Feld label="E-Mail"><input className="pp-input" type="email" value={edit.email} onChange={e => setE('email', e.target.value)} autoComplete="off" /></Feld>
             <Feld label="Telefon"><input className="pp-input" type="tel" value={edit.telefon} onChange={e => setE('telefon', e.target.value)} autoComplete="off" /></Feld>
           </div>
@@ -1593,10 +1601,16 @@ const PersonalDetail = ({ id, onBack }) => {
                 <label className="pp-check" style={{ margin: 0 }}><input type="checkbox" checked={f.aktiv} onChange={e => setF(i, 'aktiv', e.target.checked)} /> aktiv</label>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0 12px' }}>
+                <Feld label="Berufsbezeichnung"><input className="pp-input" maxLength={80} value={f.anzeigeRolle} onChange={e => setF(i, 'anzeigeRolle', e.target.value)} /></Feld>
+                <Feld label="Personalnummer"><input className="pp-input" maxLength={30} value={f.personalnummer} onChange={e => setF(i, 'personalnummer', e.target.value)} /></Feld>
                 <Feld label="Eintritt"><input className="pp-input" type="date" value={f.eintritt} onChange={e => setF(i, 'eintritt', e.target.value)} /></Feld>
                 <Feld label="Austritt"><input className="pp-input" type="date" value={f.austritt} onChange={e => setF(i, 'austritt', e.target.value)} /></Feld>
                 <Feld label="Standort"><select className="pp-select" style={sel} value={f.standort} onChange={e => setF(i, 'standort', e.target.value)}><option value="">kein Standort</option>{STANDORTE.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Feld>
                 <Feld label="Behandlungsanteil (%)"><input className="pp-input" inputMode="decimal" value={f.anteil} onChange={e => setF(i, 'anteil', e.target.value.replace(/[^\d,.]/g, ''))} /></Feld>
+              </div>
+              <span className="pp-feld__label" style={{ display: 'block', margin: '4px 0 6px' }}>Tätigkeiten</span>
+              <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 10 }}>
+                {TAETIGKEITEN.map(([k, l]) => <label key={k} className="pp-check" style={{ margin: 0 }}><input type="checkbox" checked={f.taetigkeiten.includes(k)} onChange={e => setF(i, 'taetigkeiten', e.target.checked ? [...f.taetigkeiten, k] : f.taetigkeiten.filter(x => x !== k))} /> {l}</label>)}
               </div>
               {!f.aktiv && <p className="pp-meta" style={{ margin: 0 }}>Inaktiv: Die Person kann sich für {f.firmaId === 2 ? 'Pilates Company' : 'PhysioPro'} nicht mehr anmelden. Ohne Austrittsdatum wird heute eingetragen.</p>}
             </div>
