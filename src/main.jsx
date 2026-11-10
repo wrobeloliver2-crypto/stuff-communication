@@ -423,7 +423,8 @@ const Login = ({ boot, onLogin, onPinSetzen }) => {
 // der Sitzungs-Token wird im URL-Fragment mitgegeben, die App meldet damit an.
 // Apps nur für bestimmte Personen (mitarbeiter.id): die Kachel erscheint nur ihnen – auch nicht der übrigen Verwaltung.
 // Prüfung (Pilates @home): Olga (20), Hanna (29), Oliver (30). Die App selbst zeigt jeder Person ihre eigene Seite.
-const NUR_PERSONEN = { pruefung: [20, 29, 30] };
+// Abrechnungsplatz (Theorg-Rezepte an NOVENTI): nur Hanna (29) und Oliver (30) – der Abrechnungsplatz lässt serverseitig auch nur diese beiden hinein.
+const NUR_PERSONEN = { pruefung: [20, 29, 30], abrechnungsplatz: [29, 30] };
 const fuerPerson = (t, mid) => !NUR_PERSONEN[t.kuerzel] || NUR_PERSONEN[t.kuerzel].includes(Number(mid));
 const meineApps = (tools, meineFirmen, mid) => tools.filter(t => t.aktiv && t.imIntranet && (t.firmaId === null || meineFirmen.includes(t.firmaId)) && fuerPerson(t, mid));
 // Verwaltung: jede aktive App mit Oberfläche – unabhängig von Firma und Kachel-Häkchen.
