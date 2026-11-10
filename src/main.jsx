@@ -421,10 +421,14 @@ const Login = ({ boot, onLogin, onPinSetzen }) => {
 // ── Kacheln ─────────────────────────────────────────────────────────────────
 // Kacheln der Apps, die zur Person passen (Firma) – mit Direkteinstieg:
 // der Sitzungs-Token wird im URL-Fragment mitgegeben, die App meldet damit an.
-const meineApps = (tools, meineFirmen) => tools.filter(t => t.aktiv && t.imIntranet && (t.firmaId === null || meineFirmen.includes(t.firmaId)));
+// Apps nur für bestimmte Personen (mitarbeiter.id): die Kachel erscheint nur ihnen – auch nicht der übrigen Verwaltung.
+// Prüfung (Pilates @home): Olga (20), Hanna (29), Oliver (30). Die App selbst zeigt jeder Person ihre eigene Seite.
+const NUR_PERSONEN = { pruefung: [20, 29, 30] };
+const fuerPerson = (t, mid) => !NUR_PERSONEN[t.kuerzel] || NUR_PERSONEN[t.kuerzel].includes(Number(mid));
+const meineApps = (tools, meineFirmen, mid) => tools.filter(t => t.aktiv && t.imIntranet && (t.firmaId === null || meineFirmen.includes(t.firmaId)) && fuerPerson(t, mid));
 // Verwaltung: jede aktive App mit Oberfläche – unabhängig von Firma und Kachel-Häkchen.
 // Ausgenommen: das Portal selbst und Einträge ohne Link (z. B. der Mitarbeiter-Dienst im Hintergrund).
-const alleApps = (tools) => tools.filter(t => t.aktiv && t.url && t.kuerzel !== 'intranet');
+const alleApps = (tools, mid) => tools.filter(t => t.aktiv && t.url && t.kuerzel !== 'intranet' && fuerPerson(t, mid));
 const appLink = (t) => t.url ? t.url + (MA && MA.token ? '#ma=' + encodeURIComponent(MA.token) : '') : null;
 
 // App-Icons (zentral im Mitarbeiter-Dienst): Zeiterfassung in Physio-Grün oder Pilates-Rosé,
@@ -520,7 +524,7 @@ const WichtigPopup = ({ n, onGelesen, vorschau = false }) => {
 const Employee = ({ user, news, tools, dialoge, ungelesen, meineFirmen, onLogout, onChanged, vorschau = false }) => {
   const [tab, setTab] = useState('start');
   const unread = dialoge.filter(d => d.ungelesen > 0).length;
-  const apps = meineApps(tools, meineFirmen);
+  const apps = meineApps(tools, meineFirmen, user.mitarbeiterId);
   const neu = dialoge.filter(d => d.ungelesen > 0);
   const neueNews = news.filter(n => n.aktiv !== false && !n.gelesen);
   const tabs = [['start', 'Start', 'start'], ['news', 'News', 'news', neueNews.length], ['postfach', 'Mein Bereich', 'postfach', unread]];
@@ -784,7 +788,7 @@ const Admin = ({ user, news, tools, dialoge, boot, meineFirmen, onLogout, onChan
             <Begruessung user={user} nachrichten={unread} />
             <Label>Alle Apps</Label>
             <p className="pp-sek" style={{ margin: '-4px 0 12px' }}>Als Verwaltung kommst du von hier in jede App – auch in die, die für das Team keine Kachel hat. Du bist dabei schon angemeldet.</p>
-            <AppTiles tools={alleApps(tools)} firmaId={user.firmaId}>
+            <AppTiles tools={alleApps(tools, user.mitarbeiterId)} firmaId={user.firmaId}>
               <NewsTile neu={neueNews} onClick={() => setTab('news')} />
               <MeinBereichTile neu={unread} onClick={() => setTab('post')} />
               {personal && personalKachel}
